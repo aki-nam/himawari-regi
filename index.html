@@ -112,6 +112,11 @@ textarea{width:100%;min-height:9em}
 .banner{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--sun);border-radius:12px;padding:8px 12px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;justify-content:space-between}
 .banner b{font-family:var(--f-display)}
 .banner .note{margin:0}
+.carry{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.carry button{font:inherit;font-size:.9rem;padding:6px 12px;border-radius:999px;border:1px solid var(--sun);background:var(--surface);color:var(--fg);cursor:pointer}
+.carry .on{font-size:.9rem;font-weight:700}
+.fix{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--danger);border-radius:12px;padding:8px 12px;margin-top:10px}
+.fix ul{margin:4px 0 0;padding-left:1.2em}
 .item .rem{font-size:.85rem;font-weight:700;color:var(--accent)}
 .item .rem.zero{color:var(--danger)}
 .item.out{opacity:.55}
@@ -238,9 +243,13 @@ function readHash(){
     const place = b64urlDecode(p[2]);
     const items = (p[3]||"").split("_").filter(Boolean).map(x=>{ const [no,q]=x.split("~").map(Number); return {no,qty:q}; }).filter(x=>x.no>0&&x.qty>0);
     const key = date+"|"+place;
-    S.batches[key] = {date, place, items};
+    // QRを読み直しても、前の販売先から足した分は消さない
+    const old = S.batches[key], nb = {date, place, items};
+    if(old && old.carry){ nb.qr = items; nb.carry = old.carry; nb.items = mergeItems(items, old.carry.items); }
+    if(old && old.carriedTo) nb.carriedTo = old.carriedTo;
+    S.batches[key] = nb;
     const isNew = !S.batch || S.batch.key!==key;
-    S.batch = {key, date, place, items}; S.place = place; S.mode = "batch"; save();
+    S.batch = {key, date, place, items:nb.items}; S.place = place; S.mode = "batch"; save();
     if(isNew){ cart={}; setTimeout(()=>toast(jpDate(date)+"　"+place+" の持参分（"+items.length+"品）を読み込みました"),300); }
   }catch(e){ setTimeout(()=>toast("QRの内容を読み取れませんでした"),300); }
 }
@@ -248,6 +257,28 @@ function readHash(){
 /* ---------- 売れた数・残り ---------- */
 function soldIn(key){ const c={}; S.sales.filter(s=>s.batchKey===key).forEach(s=>s.items.forEach(i=>{ c[i.no]=(c[i.no]||0)+i.qty; })); return c; }
 function remaining(){ if(!S.batch) return null; const sold=soldIn(S.batch.key), r={}; S.batch.items.forEach(i=>{ r[i.no]=i.qty-(sold[i.no]||0)-(cart[i.no]||0); }); return r; }
+
+/* ---------- 前の販売先の残りを足す（同じ日に先に回った販売先の残りを、今の持参に足す） ---------- */
+function mergeItems(a, b){ const m={}; a.concat(b).forEach(i=>{ m[i.no]=(m[i.no]||0)+i.qty; }); return Object.keys(m).map(Number).sort((x,y)=>x-y).map(no=>({no,qty:m[no]})); }
+function restOf(key){ const b=S.batches[key]; if(!b) return []; const sold=soldIn(key); return b.items.map(i=>({no:i.no,qty:i.qty-(sold[i.no]||0)})).filter(i=>i.qty>0); }
+function carryCands(){
+  if(!S.batch) return []; const cur=S.batches[S.batch.key]; if(!cur || cur.carry) return [];
+  return Object.entries(S.batches).filter(([k,b])=>k!==S.batch.key && b.date===S.batch.date && !b.carriedTo)
+    .map(([k,b])=>{ const rest=restOf(k); return {k, place:b.place, rest, n:rest.reduce((s,i)=>s+i.qty,0)}; }).filter(x=>x.n>0);
+}
+function setBatchItems(key){ if(S.batch && S.batch.key===key) S.batch.items=S.batches[key].items; }
+function addCarry(fromKey){
+  const c=carryCands().find(x=>x.k===fromKey); if(!c) return; const key=S.batch.key, b=S.batches[key];
+  b.qr = b.items.map(i=>({no:i.no,qty:i.qty})); b.carry = {fromKey, from:c.place, items:c.rest};
+  b.items = mergeItems(b.qr, c.rest); S.batches[fromKey].carriedTo = key; setBatchItems(key); save();
+  toast(c.place+" の残り "+c.n+"個を持参に足しました");
+}
+function removeCarry(key){
+  const b=S.batches[key]; if(!b || !b.carry) return;
+  if(S.batches[b.carry.fromKey]) delete S.batches[b.carry.fromKey].carriedTo;
+  b.items = b.qr; delete b.qr; delete b.carry; setBatchItems(key); save();
+  toast("足した分を外しました");
+}
 
 function cartList(){ return Object.entries(cart).filter(([no,q])=>q>0 && item(no)).map(([no,q])=>({m:item(no),q})); }
 function cartTotal(){ return cartList().reduce((s,x)=>s+x.m.price*x.q,0); }
@@ -260,6 +291,10 @@ function renderBatchBar(){
   const n = S.batch.items.reduce((s,i)=>s+i.qty,0);
   b.innerHTML = `<div class="banner"><span><b>${jpDate(S.batch.date)}　${esc(S.batch.place)}</b>　持参 ${S.batch.items.length}品・${n}個</span>
     <span class="chips" style="padding:0"><button type="button" data-mode="batch" aria-pressed="${S.mode==="batch"}">持参分だけ</button><button type="button" data-mode="all" aria-pressed="${S.mode!=="batch"}">全部のパン</button></span></div>`;
+  const cur=S.batches[S.batch.key], C=carryCands();
+  if(cur && cur.carry){ const n=cur.carry.items.reduce((s,i)=>s+i.qty,0);
+    b.innerHTML += `<div class="carry"><span class="on">＋ ${esc(cur.carry.from)} の残り ${n}個を足しています</span><button type="button" data-uncarry="1">足した分を外す</button></div>`; }
+  else if(C.length) b.innerHTML += `<div class="carry">${C.map(c=>`<button type="button" data-carry="${esc(c.k)}">＋ ${esc(c.place)} の残り ${c.n}個を足す</button>`).join("")}</div>`;
 }
 function renderChips(){
   const c=$("chips"); c.hidden = tab!=="reg";
@@ -343,6 +378,9 @@ function summarize(g){
   const menu = menuFor(g.date); const items={}; let cash=0,pp=0;
   g.list.forEach(s=>{ s.items.forEach(i=>{ const o=items[i.no+"|"+i.name]=items[i.no+"|"+i.name]||{no:i.no,name:i.name,qty:0,amt:0,brought:null}; o.qty+=i.qty; o.amt+=i.qty*i.price; }); if(s.pay==="PayPay") pp+=s.total; else cash+=s.total; });
   if(g.batch) g.batch.items.forEach(b=>{ const m=menu.find(x=>x.no===b.no); const nm=m?m.name:("番号"+b.no); const k=b.no+"|"+nm; items[k]=items[k]||{no:b.no,name:nm,qty:0,amt:0}; items[k].brought=b.qty; });
+  // 前の販売先から足した数と、QRの持参数（発注DBの数量）
+  if(g.batch){ const add={}, org={}; (g.batch.carry?g.batch.carry.items:[]).forEach(i=>add[i.no]=i.qty); (g.batch.qr||g.batch.items).forEach(i=>org[i.no]=i.qty);
+    Object.values(items).forEach(o=>{ o.carried=add[o.no]||0; o.org=org[o.no]||0; }); }
   const rows = Object.values(items).sort((a,b)=>a.no-b.no);
   return {rows, cash, pp, total:cash+pp, count:g.list.length, pieces:rows.reduce((s,r)=>s+r.qty,0), menu};
 }
@@ -355,6 +393,10 @@ function renderSales(){
   if(!G.length){ v.innerHTML=`<h2>売上</h2><div class="empty">まだ会計がありません。「レジ」でパンのボタンを押して「会計へ」→「会計する」と、ここに品ごとの売上が集まります。</div>`; return; }
   if(!salesKey || !G.find(x=>x.k===salesKey)) salesKey=G[0].k;
   const g=G.find(x=>x.k===salesKey), sm=summarize(g), hasB=!!g.batch, B=buyersOf(g);
+  // 発注_統合_v2 の B列（持参数）を直す品：前の販売先から足した品と、持参より多く売れた品
+  const fix = hasB ? sm.rows.filter(r=>r.brought!=null||r.qty).map(r=>({r, to:Math.max(r.brought||0, r.qty)})).filter(x=>x.to!==(x.r.org||0)) : [];
+  const over = hasB && sm.rows.some(r=>r.qty>(r.brought||0));
+  const cfrom = hasB && g.batch.carry ? g.batch.carry.from : "", cto = hasB && g.batch.carriedTo && S.batches[g.batch.carriedTo] ? S.batches[g.batch.carriedTo].place : "";
   v.innerHTML = `<h2>売上</h2>
    <label for="sel" class="muted">日付・販売先</label>
    <select id="sel">${G.map(x=>`<option value="${esc(x.k)}" ${x.k===salesKey?"selected":""}>${jpDate(x.date)}　${esc(x.place)}（${x.list.length}件）${x.batch?"　持参あり":""}</option>`).join("")}</select>
@@ -366,7 +408,7 @@ function renderSales(){
    </div>
    <h2>品ごとの売上${hasB?"と販売残":""}</h2>
    <div class="tblwrap"><table class="tbl"><thead><tr><th>品名</th>${hasB?`<th class="r">持参</th>`:""}<th class="r">売れた</th>${hasB?`<th class="r">残り</th>`:""}<th class="r">金額</th></tr></thead><tbody>
-     ${sm.rows.map(r=>{ const rest = r.brought==null?null:r.brought-r.qty; return `<tr><td>${esc(r.name)}</td>${hasB?`<td class="r">${r.brought==null?"—":r.brought}</td>`:""}<td class="r${r.qty?"":" zero"}">${r.qty}</td>${hasB?`<td class="r${rest>0?"":" zero"}">${rest==null?"—":rest}</td>`:""}<td class="r">${yen(r.amt)}</td></tr>`; }).join("")}
+     ${sm.rows.map(r=>{ const rest = r.brought==null?null:r.brought-r.qty; return `<tr><td>${esc(r.name)}</td>${hasB?`<td class="r">${r.brought==null?"—":r.brought}${r.carried?`<br><span class="note">うち足した${r.carried}</span>`:""}</td>`:""}<td class="r${r.qty?"":" zero"}">${r.qty}</td>${hasB?`<td class="r${rest>0?"":" zero"}">${rest==null?"—":rest}</td>`:""}<td class="r">${yen(r.amt)}</td></tr>`; }).join("")}
    </tbody></table></div>
    <div class="row" style="margin-top:10px">
      <button class="btn primary" type="button" id="cp-line">LINE用にコピー</button>
@@ -374,6 +416,11 @@ function renderSales(){
      ${hasB?`<button class="btn sun" type="button" id="cp-zan">販売残をコピー</button>`:""}
    </div>
    ${hasB?`<p class="note">「販売残をコピー」は、発注_統合_v2 の［販売実績入力］でこの日を呼び出し、C6（販売残のいちばん上）をクリックして貼り付けると、全部の品の販売残が一度に入ります（売り切れは 0）。数字だけが品の数だけ並びます。</p>`:""}
+   ${cfrom?`<p class="note">${esc(cfrom)} の残りを足しています（「持参」に入っています）。</p>`:""}
+   ${cto?`<p class="note">この販売先の残りは ${esc(cto)} へ回しました。ここの販売残は、ここで残った数のまま登録します。</p>`:""}
+   ${fix.length?`<div class="fix"><b>販売残を貼る前に、B列（持参数）を直す品</b>
+     <ul>${fix.map(x=>`<li>${esc(x.r.name)}　${x.r.org||0} → <b>${x.to}</b></li>`).join("")}</ul>
+     <span class="note">発注_統合_v2［販売実績入力］でこの日・この販売先を呼び出し、この品の B列を右の数にしてから、C6 に販売残を貼って【② 発注DBに登録】。${over?"持参より多く売れた品は、前の販売先の残りを売ったはずです。次からはレジ画面の【＋ ○○の残り ○個を足す】を押してから売ってください。":""}</span></div>`:""}
    <textarea id="cp-area" hidden readonly aria-label="コピーする文"></textarea>
    <h2>お名前ごと</h2>
    ${B.length? `<div class="tblwrap"><table class="tbl"><thead><tr><th>お名前</th><th class="r">回数</th><th class="r">個数</th><th class="r">金額</th><th>買ったパン</th></tr></thead><tbody>
@@ -393,8 +440,9 @@ function renderSales(){
 function copyText(kind){
   const g=groups().find(x=>x.k===salesKey); if(!g) return; const sm=summarize(g); let txt;
   if(kind==="line"){
-    txt = `【${jpDate(g.date)} ${g.place} 売上】\nお客さま ${sm.count}人　${sm.pieces}個\n合計 ${yen(sm.total)}（現金 ${yen(sm.cash)}／PayPay ${yen(sm.pp)}）\n\n` +
-      sm.rows.filter(r=>r.qty||r.brought).map(r=>`・${r.name}　${r.qty}個${r.brought!=null?`（持参${r.brought}・残り${r.brought-r.qty}）`:""}　${yen(r.amt)}`).join("\n");
+    const cf = g.batch&&g.batch.carry ? `※ ${g.batch.carry.from} の残りを足して販売\n` : "", ct = g.batch&&g.batch.carriedTo&&S.batches[g.batch.carriedTo] ? `※ 残りは ${S.batches[g.batch.carriedTo].place} へ回しました\n` : "";
+    txt = `【${jpDate(g.date)} ${g.place} 売上】\nお客さま ${sm.count}人　${sm.pieces}個\n合計 ${yen(sm.total)}（現金 ${yen(sm.cash)}／PayPay ${yen(sm.pp)}）\n${cf}${ct}\n` +
+      sm.rows.filter(r=>r.qty||r.brought).map(r=>`・${r.name}　${r.qty}個${r.brought!=null?`（持参${r.brought}${r.carried?`うち足した${r.carried}`:""}・残り${r.brought-r.qty}）`:""}　${yen(r.amt)}`).join("\n");
   } else if(kind==="xls"){
     txt = ["日付\t販売先\t番号\t品名\t持参\t売れた\t残り\t金額"].concat(sm.rows.map(r=>`${g.date}\t${g.place}\t${r.no}\t${r.name}\t${r.brought??""}\t${r.qty}\t${r.brought!=null?r.brought-r.qty:""}\t${r.amt}`)).join("\n");
   } else if(kind==="zan"){
@@ -474,7 +522,10 @@ function show(t){
 /* ---------- 操作 ---------- */
 document.querySelector("nav").addEventListener("click",e=>{ const b=e.target.closest("button[data-tab]"); if(b) show(b.dataset.tab); });
 $("place").addEventListener("input",e=>{ S.place=e.target.value; save(); });
-$("batchbar").addEventListener("click",e=>{ const b=e.target.closest("[data-mode]"); if(!b) return; S.mode=b.dataset.mode; save(); renderBatchBar(); renderGrid(); });
+$("batchbar").addEventListener("click",e=>{
+  const c=e.target.closest("[data-carry]"), u=e.target.closest("[data-uncarry]");
+  if(c||u){ if(c) addCarry(c.dataset.carry); else removeCarry(S.batch.key); renderBatchBar(); renderGrid(); return; }
+  const b=e.target.closest("[data-mode]"); if(!b) return; S.mode=b.dataset.mode; save(); renderBatchBar(); renderGrid(); });
 $("chips").addEventListener("click",e=>{ const b=e.target.closest("button[data-cat]"); if(!b) return; catFilter=b.dataset.cat; renderChips(); renderGrid(); });
 $("grid").addEventListener("click",e=>{ const b=e.target.closest(".item"); if(b) add(Number(b.dataset.no)); });
 $("open").addEventListener("click",openSheet);
@@ -497,7 +548,7 @@ $("v-sales").addEventListener("click",e=>{
   const t=e.target;
   if(t.id==="cp-line") copyText("line"); if(t.id==="cp-xls") copyText("xls"); if(t.id==="cp-zan") copyText("zan"); if(t.id==="cp-buyer") copyText("buyer");
   const u=t.closest("[data-undo]"); if(u) askConfirm("この会計を取り消しますか？", ()=>{ S.sales=S.sales.filter(s=>s.id!==u.dataset.undo); save(); renderSales(); toast("取り消しました"); });
-  if(t.id==="del-group") askConfirm("この日・この販売先の記録を全部消します。先にコピーしましたか？", ()=>{ const k=salesKey; S.sales=S.sales.filter(s=>(s.batchKey||(s.date+"|"+s.place))!==k); delete S.batches[k]; if(S.batch&&S.batch.key===k) S.batch=null; salesKey=null; save(); renderSales(); toast("記録を消しました"); });
+  if(t.id==="del-group") askConfirm("この日・この販売先の記録を全部消します。先にコピーしましたか？", ()=>{ const k=salesKey; S.sales=S.sales.filter(s=>(s.batchKey||(s.date+"|"+s.place))!==k); const db=S.batches[k]; if(db&&db.carry&&S.batches[db.carry.fromKey]) delete S.batches[db.carry.fromKey].carriedTo; Object.values(S.batches).forEach(b=>{ if(b.carriedTo===k) delete b.carriedTo; }); delete S.batches[k]; if(S.batch&&S.batch.key===k) S.batch=null; salesKey=null; save(); renderSales(); toast("記録を消しました"); });
   const cf=t.closest("[data-cf]"); if(cf){ const fn=pendingConfirm; pendingConfirm=null; t.closest(".confirm").remove(); if(cf.dataset.cf==="yes"&&fn) fn(); }
 });
 function menuRowName(no){ const m=item(no); return m?m.name:null; }
