@@ -208,6 +208,8 @@ const today = () => ymd(new Date());
 const jpDate = s => { const [y,m,d]=s.split("-").map(Number); return m+"/"+d+"("+"日月火水木金土"[new Date(y,m-1,d).getDay()]+")"; };
 const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const toTime = s => { const p=String(s).split(/[\/\-]/).map(Number); return new Date(p[0],p[1]-1,p[2]||1).getTime(); };
+// アプリに新しい月のメニューが足されたら、このスマホのメニューにも足す（直した月はそのまま）
+{ const have=new Set(S.menu.map(r=>toTime(r[0]))); DEFAULT_MENU.forEach(r=>{ if(!have.has(toTime(r[0]))) S.menu.push(r.slice()); }); }
 
 /* その日に使うメニュー（適用開始日がその日以前でいちばん新しい月） */
 function menuFor(dateStr){
