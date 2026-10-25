@@ -1,0 +1,315 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex">
+<title>ひまわり パンの予約</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=M+PLUS+Rounded+1c:wght@500;800&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}
+/* Layout: phone-first order page — date on top, bread button grid, sticky total bar; the second step collects delivery details */
+:root{
+  --bg:#fbf6ee; --surface:#ffffff; --fg:#2a241c; --muted:#6b6255; --line:#e3dacb;
+  --accent:#b8561f; --accent-fg:#ffffff; --sun:#f2b705; --sun-fg:#2a2100;
+  --cat1:#fdf1d6; --cat2:#e3f0e8; --cat3:#e6ecf7; --danger:#b3261e; --ok:#1f6b4a;
+  --f-display:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Yu Gothic",sans-serif;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17130f; --surface:#221c16; --fg:#f1e9dd; --muted:#b3a794; --line:#3a3128;
+  --accent:#f08a4b; --accent-fg:#1d0e04; --sun:#f2c33a; --sun-fg:#231b00;
+  --cat1:#33291a; --cat2:#1d3127; --cat3:#1f2736; --danger:#ff8a80; --ok:#4fb385; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17130f; --surface:#221c16; --fg:#f1e9dd; --muted:#b3a794; --line:#3a3128;
+  --accent:#f08a4b; --accent-fg:#1d0e04; --sun:#f2c33a; --sun-fg:#231b00;
+  --cat1:#33291a; --cat2:#1d3127; --cat3:#1f2736; --danger:#ff8a80; --ok:#4fb385; color-scheme:dark}
+html,body{min-height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:17px;line-height:1.55;-webkit-text-size-adjust:100%}
+.wrap{max-width:760px;margin:0 auto;padding:12px max(16px,env(safe-area-inset-right,0px)) 120px max(16px,env(safe-area-inset-left,0px))}
+h1{font-family:var(--f-display);font-weight:800;font-size:1.3rem;margin:4px 0 2px;display:flex;align-items:center;gap:8px}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--sun);flex:none}
+h2{font-family:var(--f-display);font-size:1.12rem;margin:18px 0 8px}
+.note{font-size:.88rem;color:var(--muted)}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+label.q{display:block;font-weight:700;margin-bottom:4px}
+.req{color:var(--danger);font-size:.85rem;margin-left:4px}
+select,input[type=text],input[type=email],textarea{font:inherit;width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
+textarea{min-height:5.5em}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0}
+.chips button{flex:none;font:inherit;font-size:.95rem;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.chips button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px}
+.item{position:relative;text-align:left;min-height:92px;padding:10px 10px 8px;border-radius:12px;border:1px solid var(--line);color:var(--fg);cursor:pointer;
+  display:flex;flex-direction:column;justify-content:space-between;gap:4px;font:inherit;-webkit-tap-highlight-color:transparent;transition:transform .06s}
+.item:active{transform:scale(.97)}
+.item[data-cat="菓子パン"]{background:var(--cat1)} .item[data-cat="惣菜パン"]{background:var(--cat2)} .item[data-cat="サンド・パイ・他"]{background:var(--cat3)}
+.item .nm{font-family:var(--f-display);font-weight:800;line-height:1.3;word-break:break-word}
+.item .pr{color:var(--muted);font-variant-numeric:tabular-nums}
+.item .hp{font-size:.78rem;color:var(--muted);line-height:1.3}
+.item.off{opacity:.45;cursor:not-allowed}
+.item.off .hp{color:var(--danger);font-weight:700}
+.badge{position:absolute;top:-6px;right:-6px;min-width:30px;height:30px;padding:0 8px;border-radius:15px;background:var(--sun);color:var(--sun-fg);
+  font-family:var(--f-display);font-weight:800;display:grid;place-items:center;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);
+  padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.bar .in{max-width:760px;margin:0 auto;display:flex;align-items:center;gap:10px}
+.bar .sum{flex:1;min-width:0}
+.bar .cnt{font-size:.85rem;color:var(--muted)}
+.bar .tot{font-family:var(--f-display);font-weight:800;font-size:1.7rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.btn{font-family:var(--f-display);font-weight:800;font-size:1.05rem;border-radius:12px;padding:12px 18px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:focus-visible,.item:focus-visible,.chips button:focus-visible,.opt input:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row .btn{flex:1}
+.fields{display:flex;flex-direction:column;gap:14px}
+.opt{display:flex;flex-direction:column;gap:6px}
+.opt label{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);cursor:pointer}
+.opt input[type=radio]{width:22px;height:22px;flex:none;accent-color:var(--accent)}
+.lines{display:flex;flex-direction:column}
+.line{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)}
+.line small{display:block;color:var(--muted)}
+.qty{display:flex;align-items:center;gap:4px}
+.qty button{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:1.3rem;font-weight:700;cursor:pointer}
+.qty span{min-width:2ch;text-align:center;font-family:var(--f-display);font-weight:800;font-size:1.1rem}
+.amt{font-variant-numeric:tabular-nums;font-weight:700;min-width:5.5ch;text-align:right}
+.total{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--f-display);font-weight:800;margin-top:8px}
+.total .v{font-size:1.8rem;font-variant-numeric:tabular-nums}
+.err{background:color-mix(in srgb,var(--danger) 10%,var(--surface));border:1px solid var(--danger);border-radius:12px;padding:10px 12px;color:var(--fg)}
+.done{border-left:6px solid var(--ok)}
+.loading{padding:40px 0;text-align:center;color:var(--muted)}
+@media (prefers-reduced-motion: reduce){.item{transition:none}}
+</style></head><body>
+<div class="wrap">
+  <h1><span class="dot" aria-hidden="true"></span>手作りパン工房 ひまわり　ご予約</h1>
+  <p class="note" id="lead">お届け日を選んで、パンを押してください（1回押すと1個）。</p>
+  <div id="app"><div class="loading">メニューを読み込んでいます…</div></div>
+</div>
+<div class="bar" id="bar" hidden>
+  <div class="in">
+    <div class="sum"><div class="cnt" id="cnt">0個</div><div class="tot" id="tot">¥0</div></div>
+    <button class="btn" id="b-back" type="button" hidden>パンにもどる</button>
+    <button class="btn primary" id="b-next" type="button">次へ</button>
+  </div>
+</div>
+<script>
+(function(){
+// 予約の受け口（Googleフォームのスクリプトを「ウェブアプリ」で公開したアドレス）
+const API = "";
+// うまくいかないときのGoogleフォーム
+const FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSeJ2d926GBPr4JCRqLnx4GRdXY5N-hNS1gOYldx6XKidnkBzg/viewform";
+const KEY = "himawari-yoyaku-v1";   // このスマホに覚えること（お届け先・お名前など）
+const CATS = ["菓子パン","惣菜パン","サンド・パイ・他"];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const nk = s => String(s||"").normalize("NFKC").trim();
+const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
+function catOf(n){
+  if(/ホイップサンド/.test(n)) return "菓子パン";
+  if(/サンド|パイ|食パン|ドーナツ/.test(n)) return "サンド・パイ・他";
+  if(/調理|キャベツ|バーガー|カレー|ウインナー|ウィンナー|ベーコン|ホットドッグ|ハムエッグ|ピザ|ダブルチーズ|おやき|ちくわ/.test(n)) return "惣菜パン";
+  return "菓子パン";
+}
+
+let F = null;          // フォームの中身
+let breads = [], fields = [], cart = {}, vals = {}, step = "pick", catFilter = "すべて", sending = false;
+let mem = {}; try{ mem = JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){}
+function remember(){ try{ localStorage.setItem(KEY, JSON.stringify(mem)); }catch(e){} }
+
+/* ---------- フォームの質問を、パン（個数を選ぶ欄）とそのほかに分ける ---------- */
+function build(info){
+  F = info; breads = []; fields = [];
+  info.items.forEach(it=>{
+    const t = nk(it.title);
+    const m = t.match(/^(.*?)\s*([0-9]{2,5})\s*円?$/);
+    if(it.type==="LIST" && m && (it.choices||[]).some(c=>/^1$/.test(nk(c)))){
+      const five = (it.choices||[]).find(c=>/5個以上/.test(nk(c)));
+      breads.push({id:it.id, name:m[1].trim(), price:Number(m[2]), help:nk(it.help), choices:it.choices, five, cat:catOf(m[1])});
+    } else if(["LIST","MULTIPLE_CHOICE","TEXT","PARAGRAPH_TEXT"].includes(it.type)){
+      fields.push(Object.assign({}, it, {kind:kindOf(it)}));
+    } else if(it.type==="SECTION_HEADER" && /LINE/.test(it.title) && /最初のメッセージ|送信/.test(it.title+it.help)){
+      fields.lineNote = it;   // LINEで受け取る人への大事な説明
+    }
+  });
+  // 前に入れたものを入れておく
+  fields.forEach(f=>{ if(f.kind!=="date" && f.kind!=="msg" && mem[f.title]!=null){ vals[f.id]=mem[f.title]; if(mem[f.title+"_o"]!=null) vals[f.id+"_o"]=mem[f.title+"_o"]; } });
+}
+function kindOf(it){
+  const t = it.title;
+  if(/納品希望日|お届け日/.test(t)) return "date";
+  if(/連絡|メッセージ/.test(t) && it.type==="PARAGRAPH_TEXT") return "msg";
+  if(/受け取り方法/.test(t)) return "recv";
+  if(/メールアドレス/.test(t)) return "mail";
+  if(/LINEのお名前/.test(t)) return "line";
+  return "other";
+}
+const fieldOf = k => fields.find(f=>f.kind===k);
+
+/* ---------- お届け日と、その日に頼めるパン ---------- */
+function dateOf(s){
+  const m = nk(s).match(/(\d{1,2})月(\d{1,2})日/); if(!m) return null;
+  const now = new Date(), mo = Number(m[1]), d = Number(m[2]);
+  let y = now.getFullYear(); if(mo < now.getMonth()+1-1) y++;   // 年をまたぐとき
+  return new Date(y, mo-1, d);
+}
+function chosenDate(){ const f=fieldOf("date"); if(!f) return null; const v=vals[f.id]; return v==="__other" ? dateOf(vals[f.id+"_o"]) : dateOf(v); }
+// 説明の「10月中のお届けのみ」「11月1日からのお届け」を読む
+function availability(b, dt){
+  if(!dt) return {ok:true};
+  let m = b.help.match(/(\d{1,2})月中のお届けのみ/);
+  if(m && dt.getMonth()+1!==Number(m[1])) return {ok:false, why:m[1]+"月中のお届けのみ"};
+  m = b.help.match(/(\d{1,2})月(\d{1,2})日から/);
+  if(m){ const from = new Date(dt.getFullYear(), Number(m[1])-1, Number(m[2])); if(from - dt > 200*86400000) from.setFullYear(from.getFullYear()-1); if(dt < from) return {ok:false, why:m[1]+"月"+m[2]+"日からのお届け"}; }
+  return {ok:true};
+}
+
+/* ---------- 画面 ---------- */
+function count(){ return Object.values(cart).reduce((s,q)=>s+q,0); }
+function total(){ return breads.reduce((s,b)=>s+(cart[b.id]||0)*b.price,0); }
+function render(){
+  if(step==="pick") renderPick(); else if(step==="info") renderInfo();
+  const n=count(); $("cnt").textContent=n+"個"; $("tot").textContent=yen(total());
+  $("bar").hidden = step==="done";
+  $("b-back").hidden = step!=="info";
+  $("b-next").textContent = step==="pick" ? "次へ（お届け先）" : (sending ? "送っています…" : "予約する");
+  $("b-next").disabled = sending || (step==="pick" && !n);
+}
+function dateField(){
+  const f = fieldOf("date"); if(!f) return "";
+  const v = vals[f.id]||"";
+  return `<div><label class="q" for="f-${f.id}">お届け日（納品希望日）<span class="req">必須</span></label>
+    <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${(f.choices||[]).map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}${f.other?`<option value="__other" ${v==="__other"?"selected":""}>その他（日付を書く）</option>`:""}</select>
+    ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="例：11月21日" style="margin-top:6px" aria-label="お届け日">`:""}
+    ${f.help?`<p class="note" style="margin:4px 0 0">${esc(f.help)}</p>`:""}</div>`;
+}
+function renderPick(){
+  const dt = chosenDate();
+  let list = breads.filter(b=>catFilter==="すべて"||b.cat===catFilter);
+  $("app").innerHTML = `<div class="box">${dateField()}</div>
+    <h2>パンを選ぶ</h2>
+    <div class="chips">${["すべて",...CATS].map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("")}</div>
+    <div class="grid">${list.map(b=>{ const a=availability(b,dt), q=cart[b.id]||0;
+      return `<button type="button" class="item${a.ok?"":" off"}" data-add="${b.id}" data-cat="${b.cat}" ${a.ok?"":`aria-disabled="true"`}>
+        <span class="nm">${esc(b.name)}</span><span class="pr">${yen(b.price)}</span>
+        ${b.help && !/^5個以上/.test(b.help)?`<span class="hp">${esc(a.ok?b.help:a.why)}</span>`:(a.ok?"":`<span class="hp">${esc(a.why)}</span>`)}
+        ${q?`<span class="badge">${q}</span>`:""}</button>`; }).join("")}</div>
+    <p class="note">数をへらすときは「次へ」の画面で − を押します。5個以上もそのまま押せます（連絡欄に自動で書きます）。</p>`;
+}
+function optField(f){
+  const v = vals[f.id]||"";
+  const title = esc(f.title.trim()), req = f.required?`<span class="req">必須</span>`:"";
+  if(f.type==="MULTIPLE_CHOICE") return `<div><span class="q" style="font-weight:700">${title}${req}</span>
+      ${f.help?`<p class="note" style="margin:2px 0 6px">${esc(f.help)}</p>`:""}
+      <div class="opt" role="radiogroup" aria-label="${title}">${(f.choices||[]).map(c=>`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="${esc(c)}" ${c===v?"checked":""}><span>${esc(c)}</span></label>`).join("")}
+      ${f.other?`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="__other" ${v==="__other"?"checked":""}><span>その他</span></label>`:""}</div>
+      ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="ここに書いてください" style="margin-top:6px" aria-label="${title}（その他）">`:""}</div>`;
+  if(f.type==="LIST") return `<div><label class="q" for="f-${f.id}">${title}${req}</label>
+      <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${(f.choices||[]).map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}</select>
+      ${f.help?`<p class="note" style="margin:4px 0 0">${esc(f.help)}</p>`:""}</div>`;
+  const tag = f.type==="PARAGRAPH_TEXT" ? `<textarea id="f-${f.id}" data-f="${f.id}">${esc(v)}</textarea>`
+    : `<input id="f-${f.id}" data-f="${f.id}" type="${f.kind==="mail"?"email":"text"}" ${f.kind==="mail"?`inputmode="email" autocomplete="email"`:""} value="${esc(v)}">`;
+  return `<div><label class="q" for="f-${f.id}">${title}${req}</label>${f.help?`<p class="note" style="margin:0 0 4px">${esc(f.help)}</p>`:""}${tag}</div>`;
+}
+function recvIs(re){ const r=fieldOf("recv"); return r && re.test(vals[r.id]||""); }
+function renderInfo(){
+  const L = breads.filter(b=>cart[b.id]);
+  const shown = fields.filter(f=>f.kind!=="date" && !(f.kind==="mail" && !recvIs(/メール/)) && !(f.kind==="line" && !recvIs(/LINE/)));
+  $("app").innerHTML = `<h2>ご注文の内容</h2>
+    <div class="box"><div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}<small>${yen(b.price)}</small></div>
+       <div class="qty"><button type="button" data-dec="${b.id}" aria-label="${esc(b.name)}を1つへらす">−</button><span>${cart[b.id]}</span><button type="button" data-inc="${b.id}" aria-label="${esc(b.name)}を1つふやす">＋</button></div>
+       <div class="amt">${yen(b.price*cart[b.id])}</div></div>`).join("")}</div>
+     <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div></div>
+    <h2>お届け先・お名前</h2>
+    <div class="box fields">${dateField()}${shown.map(optField).join("")}
+      ${fields.lineNote && recvIs(/LINE/)?`<div class="err"><b>${esc(fields.lineNote.title)}</b><p class="note" style="margin:4px 0 0">${esc(fields.lineNote.help)}</p></div>`:""}
+      <p class="note">お届け先・お名前・お届け時間・受け取り方法は、次から入れなくてよいように、このスマホに覚えます。</p></div>
+    <div id="msgbox"></div>`;
+}
+function showErr(msg){ const b=$("msgbox"); if(b){ b.innerHTML=`<div class="err" role="alert" style="margin-top:12px">${msg}</div>`; b.scrollIntoView({block:"center"}); } }
+
+/* ---------- 送る ---------- */
+function answerOf(f){ const v=vals[f.id]; return v==="__other" ? (vals[f.id+"_o"]||"").trim() : (v||"").trim(); }
+function collect(){
+  const ans = {}, miss = [], extra = [];
+  const dt = chosenDate();
+  breads.forEach(b=>{ const q=cart[b.id]||0; if(!q) return;
+    const a=availability(b,dt); if(!a.ok) miss.push(`「${b.name}」は${a.why}です。数を0にするか、お届け日を変えてください`);
+    if(q>=5){ ans[b.id]=b.five||"5個以上"; extra.push(`${b.name} ${q}個`); }
+    else ans[b.id]=(b.choices.find(c=>nk(c)===String(q))||String(q)); });
+  fields.forEach(f=>{
+    const hidden = (f.kind==="mail" && !recvIs(/メール/)) || (f.kind==="line" && !recvIs(/LINE/));
+    let v = hidden ? "" : answerOf(f);
+    if(f.kind==="msg" && extra.length) v = (v?v+"\n":"") + "【5個以上の数】" + extra.join("、");
+    if(v) ans[f.id]=v; else if(f.required) miss.push(`「${f.title.replace(/^[\s「]+|[」\s]+$/g,"")}」を入れてください`);
+    if(f.kind==="mail" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) miss.push("メールアドレスの形を確かめてください");
+  });
+  if(recvIs(/メール/) && fieldOf("mail") && !answerOf(fieldOf("mail"))) miss.push("明細をメールで受け取るときは、メールアドレスを入れてください");
+  if(recvIs(/LINE/) && fieldOf("line") && !answerOf(fieldOf("line"))) miss.push("LINEで受け取るときは、LINEのお名前を入れてください");
+  if(!count()) miss.push("パンを選んでください");
+  return {ans, miss};
+}
+async function send(){
+  const {ans, miss} = collect();
+  if(miss.length){ showErr(miss.map(esc).join("<br>")); return; }
+  sending = true; render();
+  try{
+    const res = await fetch(API, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify({answers:ans})});
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.msg||"受け付けられませんでした");
+    fields.forEach(f=>{ if(!["date","msg"].includes(f.kind)){ mem[f.title]=vals[f.id]; if(vals[f.id]==="__other") mem[f.title+"_o"]=vals[f.id+"_o"]; } }); remember();
+    renderDone(ans);
+  }catch(e){
+    sending = false; render();
+    showErr(`送れませんでした（${esc(e.message||e)}）。<br>電波のよい所で、もう一度【予約する】を押してください。何度もだめなときは <a href="${FORM_URL}">Googleフォーム</a> からご予約ください。`);
+    return;
+  }
+}
+function renderDone(ans){
+  const L = breads.filter(b=>cart[b.id]), name = fields.filter(f=>f.kind==="other" && /お名前/.test(f.title)).map(answerOf).join("");
+  const df = fieldOf("date"), when = df ? answerOf(df) : "";
+  $("app").innerHTML = `<div class="box done">
+     <h2 style="margin-top:0">ご予約を受け付けました</h2>
+     <p>${esc(when)}　${esc(name)} 様</p>
+     <div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}</div><div>${cart[b.id]}個</div><div class="amt">${yen(b.price*cart[b.id])}</div></div>`).join("")}</div>
+     <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div>
+     <p class="note">この画面を残しておくときは、スクリーンショットを撮ってください。明細は、選んだ方法（メール／LINE）でお送りします。</p>
+     ${fields.lineNote && recvIs(/LINE/)?`<div class="err"><b>${esc(fields.lineNote.title)}</b><p class="note" style="margin:4px 0 0">${esc(fields.lineNote.help)}</p></div>`:""}
+   </div>
+   <div class="row" style="margin-top:12px"><button class="btn" type="button" id="b-again">ほかの日も予約する</button></div>`;
+  step = "done"; sending = false; cart = {}; render();
+}
+
+/* ---------- 操作 ---------- */
+document.addEventListener("click", e=>{
+  const t = e.target;
+  const c = t.closest("[data-cat]"); if(c && c.tagName==="BUTTON" && !c.classList.contains("item")){ catFilter=c.dataset.cat; render(); return; }
+  const a = t.closest("[data-add]"); if(a){ if(a.classList.contains("off")) return; cart[a.dataset.add]=(cart[a.dataset.add]||0)+1; render(); return; }
+  const inc = t.closest("[data-inc]"), dec = t.closest("[data-dec]");
+  if(inc){ cart[inc.dataset.inc]++; render(); return; }
+  if(dec){ const k=dec.dataset.dec; cart[k]--; if(cart[k]<=0) delete cart[k]; if(!count()){ step="pick"; } render(); return; }
+  if(t.id==="b-next"){ if(step==="pick"){ step="info"; render(); window.scrollTo(0,0); } else send(); }
+  if(t.id==="b-back"){ step="pick"; render(); window.scrollTo(0,0); }
+  if(t.id==="b-again"){ step="pick"; const df=fieldOf("date"); if(df){ delete vals[df.id]; } render(); window.scrollTo(0,0); }
+});
+function onField(e){
+  const k = e.target.dataset.f; if(!k) return;
+  vals[k] = e.target.value;
+  // 選び直したときは画面を描き直す（その他の欄・頼めるパン・メール/LINEの欄）
+  if(e.type==="change" && (e.target.tagName==="SELECT" || e.target.type==="radio")) render();
+}
+document.addEventListener("input", onField);
+document.addEventListener("change", onField);
+
+async function load(){
+  try{
+    if(!API) throw new Error("受け口のアドレスがまだ入っていません");
+    const res = await fetch(API); const info = await res.json();
+    if(!info || !Array.isArray(info.items)) throw new Error("メニューを読めませんでした");
+    if(!info.accepting){ $("app").innerHTML = `<div class="err">今は予約を受け付けていません。</div>`; return; }
+    build(info); render();
+  }catch(e){
+    $("app").innerHTML = `<div class="err">メニューを読み込めませんでした（${esc(e.message||e)}）。<br>少しして開き直すか、<a href="${FORM_URL}">Googleフォーム</a> からご予約ください。</div>`;
+  }
+}
+window.__yoyaku = {build, render, collect, get vals(){return vals;}, get cart(){return cart;}};
+load();
+})();
+</script>
+</body></html>
