@@ -126,6 +126,17 @@ textarea{width:100%;min-height:9em}
 .buyer input{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);min-width:0;width:100%}
 .tbl td.zero{color:var(--muted)}
 .pill{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--cat2);font-size:.8rem}
+/* 販売メモ（納品明細に手で書いていたこと） */
+.memo{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--accent);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.memo label{font-size:.85rem;color:var(--muted);display:block;margin-bottom:2px}
+.memo input,.memo textarea{font:inherit;width:100%;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.memo textarea{min-height:3.2em}
+.memo .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.memo .chips{flex-wrap:wrap;overflow:visible}
+.memo .chips button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.memo .loss button.sold{border-color:var(--danger)}
+.lossrow{display:flex;align-items:center;gap:6px;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line)}
+.lossrow .qty button{width:34px;height:34px;font-size:1.1rem}
 </style>
 
 <div class="wrap">
@@ -197,7 +208,7 @@ function catOf(n){
 }
 const norm = s => String(s||"").replace(/[\s　]/g,"").replace(/株式会社|㈱|\(株\)|（株）/g,"").normalize("NFKC");
 
-let S = {menu:DEFAULT_MENU.map(r=>r.slice()), cats:{}, hidden:{}, sales:[], place:"", batch:null, batches:{}, roster:{}, mode:"batch"};
+let S = {menu:DEFAULT_MENU.map(r=>r.slice()), cats:{}, hidden:{}, sales:[], place:"", batch:null, batches:{}, roster:{}, mode:"batch", notes:{}, newNames:{}, writers:[]};
 try{ const raw = localStorage.getItem(KEY); if(raw){ const o = JSON.parse(raw); if(o && Array.isArray(o.menu)) S = Object.assign(S,o); } }catch(e){}
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 
@@ -290,7 +301,7 @@ function renderBatchBar(){
   if(tab!=="reg" || !S.batch){ b.innerHTML = (tab==="reg") ? `<div class="banner"><span class="note">納品明細の「レジ用QR」をスマホのカメラで読むと、その日に持って行ったパンだけが並び、残りの数が出ます。</span></div>` : ""; return; }
   const n = S.batch.items.reduce((s,i)=>s+i.qty,0);
   b.innerHTML = `<div class="banner"><span><b>${jpDate(S.batch.date)}　${esc(S.batch.place)}</b>　持参 ${S.batch.items.length}品・${n}個</span>
-    <span class="chips" style="padding:0"><button type="button" data-mode="batch" aria-pressed="${S.mode==="batch"}">持参分だけ</button><button type="button" data-mode="all" aria-pressed="${S.mode!=="batch"}">全部のパン</button></span></div>`;
+    <span class="chips" style="padding:0"><button type="button" data-mode="batch" aria-pressed="${S.mode==="batch"}">持参分だけ</button><button type="button" data-mode="all" aria-pressed="${S.mode!=="batch"}">全部のパン</button><button type="button" data-gomemo="1">販売メモ</button></span></div>`;
   const cur=S.batches[S.batch.key], C=carryCands();
   if(cur && cur.carry){ const n=cur.carry.items.reduce((s,i)=>s+i.qty,0);
     b.innerHTML += `<div class="carry"><span class="on">＋ ${esc(cur.carry.from)} の残り ${n}個を足しています</span><button type="button" data-uncarry="1">足した分を外す</button></div>`; }
@@ -323,11 +334,23 @@ function add(no){ cart[no]=(cart[no]||0)+1; renderGrid(); renderBar(); }
 function rosterFor(place){
   const p = norm(place); if(!p) return [];
   let names = [];
-  Object.entries(S.roster||{}).forEach(([co,list])=>{ const c=norm(co); if(c && (c.includes(p)||p.includes(c))) names = names.concat(list); });
+  Object.entries(S.roster||{}).forEach(([co,list])=>{ if(samePlace(co,place)) names = names.concat(list); });
+  // その場で足した名前（名簿に入るまで、このスマホに残す）
+  Object.entries(S.newNames||{}).forEach(([pl,list])=>{ if(samePlace(pl,place)) names = names.concat(list); });
   // この販売先で前に買った人を先頭に
   const recent = []; S.sales.slice().reverse().forEach(s=>{ if(s.buyer && norm(s.place)===p && !recent.includes(s.buyer)) recent.push(s.buyer); });
-  return [...new Set(recent.concat(names))];
+  return [...new Set(recent.concat(names))].filter(n=>n!=="-");
 }
+function samePlace(a, b){ const x=norm(a), y=norm(b); return !!x && !!y && (x.includes(y)||y.includes(x)); }
+function inRoster(place, name){ return Object.entries(S.roster||{}).some(([co,l])=>samePlace(co,place) && l.some(n=>norm(n)===norm(name))); }
+// 名簿に無い名前で会計したら「足した名前」に残す
+function rememberName(place, name){
+  if(!name || inRoster(place,name)) return;
+  S.newNames=S.newNames||{}; const l=S.newNames[place]=S.newNames[place]||[];
+  if(!l.some(n=>norm(n)===norm(name))) l.push(name);
+}
+// 名簿の見出し（得意先名）に合わせる。無ければ販売先のまま
+function rosterHead(place){ const h=Object.keys(S.roster||{}).find(co=>samePlace(co,place)); return h||place; }
 function renderBuyer(){
   const all = rosterFor(S.place); const q = norm(buyerQuery);
   const list = (q ? all.filter(n=>norm(n).includes(q)) : all).slice(0,60);
@@ -363,7 +386,7 @@ function finish(){
   const batchKey = S.batch && norm(S.batch.place)===norm(place) ? S.batch.key : null;
   const sale = {id:"s"+Date.now(), ts:Date.now(), date: batchKey ? S.batch.date : today(), place, batchKey, buyer:buyer||"",
     items:cartList().map(x=>({no:x.m.no,name:x.m.name,price:x.m.price,qty:x.q})), total:t, pay, paid:pay==="現金"?(p||t):t, change:pay==="現金"&&p?p-t:0};
-  S.sales.push(sale); save();
+  S.sales.push(sale); rememberName(place, sale.buyer); save();
   cart={}; $("sheet").hidden=true; renderGrid(); renderBar();
   toast("会計しました　"+yen(t)+(sale.change?"　おつり "+yen(sale.change):"")+(sale.buyer?"　"+sale.buyer+"さん":""));
 }
@@ -388,6 +411,60 @@ function buyersOf(g){
   const b={}; g.list.forEach(s=>{ const n=s.buyer||"（名前なし）"; const o=b[n]=b[n]||{n,times:0,pieces:0,amt:0,items:{}}; o.times++; o.amt+=s.total; s.items.forEach(i=>{ o.pieces+=i.qty; o.items[i.name]=(o.items[i.name]||0)+i.qty; }); });
   return Object.values(b).sort((a,b)=>b.amt-a.amt);
 }
+
+/* ---------- 販売メモ（記入者・天候・気温・時刻・売り切れ後に欲しかった人・お客さまの声 など） ---------- */
+const WX = ["晴れ","くもり","雨","雪"];
+function memoOf(k){ S.notes=S.notes||{}; return S.notes[k]=S.notes[k]||{}; }
+function hm(ts){ const d=new Date(ts); return d.getHours()+":"+pad(d.getMinutes()); }
+// 時刻が空欄なら、最初と最後の会計の時刻を使う
+function memoTimes(g){ const m=memoOf(g.k), ts=g.list.map(s=>s.ts).sort((a,b)=>a-b);
+  return {from:m.from||(ts.length?hm(ts[0]):""), to:m.to||(ts.length?hm(ts[ts.length-1]):""), autoFrom:ts.length?hm(ts[0]):"", autoTo:ts.length?hm(ts[ts.length-1]):""}; }
+function lossText(g){ const m=memoOf(g.k), menu=menuFor(g.date);
+  const a=Object.entries(m.loss||{}).filter(([no,q])=>q>0).map(([no,q])=>{ const it=menu.find(x=>x.no===Number(no)); return (it?it.name:"番号"+no)+" "+q+"人"; });
+  if(m.lossOther) a.push(m.lossOther); return a.join("、"); }
+function nextText(m){ return [m.next?jpDate(m.next):"", m.nextNote||""].filter(Boolean).join("　"); }
+function memoFilled(m){ return ["who","wx","temp","from","to","lossOther","comment","want","next","nextNote","info"].some(f=>m[f]) || Object.values(m.loss||{}).some(q=>q>0); }
+function memoLines(g, sm){
+  const m=memoOf(g.k); if(!memoFilled(m)) return [];
+  const t=memoTimes(g), L=["【販売メモ】"];
+  if(m.who) L.push("記入者："+m.who);
+  if(m.wx||m.temp) L.push("天候："+(m.wx||"—")+(m.temp?"　気温："+m.temp+"℃":""));
+  L.push("販売時刻："+(t.from||"")+"～"+(t.to||"")+"　購入者数："+sm.count+"人");
+  const lt=lossText(g); if(lt) L.push("売り切れ後に欲しかった人："+lt);
+  if(m.comment) L.push("お客さまの声："+m.comment);
+  if(m.want) L.push("増やしたいメニュー："+m.want);
+  const nt=nextText(m); if(nt) L.push("次回の出張日："+nt);
+  if(m.info) L.push("情報："+m.info);
+  return L;
+}
+function memoInner(g){
+  const m=memoOf(g.k), t=memoTimes(g), menu=menuFor(g.date), sold=soldIn(g.k);
+  // 売り切れた品を先に。持参が無いときは表示しているパン
+  let cands = g.batch ? g.batch.items.map(b=>{ const it=menu.find(x=>x.no===b.no); return {no:b.no, name:it?it.name:"番号"+b.no, out:b.qty-(sold[b.no]||0)<=0}; }).sort((a,b)=>(b.out-a.out)||(a.no-b.no))
+                      : menu.filter(x=>x.show).map(x=>({no:x.no,name:x.name,out:false}));
+  const L=Object.entries(m.loss||{}).filter(([no,q])=>q>0);
+  return `
+   <div><label for="mm-who">記入者</label><input id="mm-who" data-m="who" type="text" list="mm-writers" value="${esc(m.who||"")}" autocomplete="off">
+     <datalist id="mm-writers">${(S.writers||[]).map(w=>`<option value="${esc(w)}">`).join("")}</datalist></div>
+   <div><label>天候</label><div class="chips">${WX.map(w=>`<button type="button" data-wx="${w}" aria-pressed="${m.wx===w}">${w}</button>`).join("")}</div></div>
+   <div class="two"><div><label for="mm-temp">気温（℃）</label><input id="mm-temp" data-m="temp" type="number" inputmode="decimal" step="0.5" value="${esc(m.temp||"")}"></div>
+     <div><label>購入者数</label><div style="padding:6px 0"><b>${g.list.length}人</b> <span class="note">（会計の回数）</span></div></div></div>
+   <div class="two"><div><label for="mm-from">販売時刻（から）</label><input id="mm-from" data-m="from" type="time" value="${esc(m.from||"")}" placeholder="${t.autoFrom}"></div>
+     <div><label for="mm-to">（まで）</label><input id="mm-to" data-m="to" type="time" value="${esc(m.to||"")}" placeholder="${t.autoTo}"></div></div>
+   ${!m.from&&!m.to&&t.autoFrom?`<span class="note">空欄のときは、最初と最後の会計の時刻（${t.autoFrom}～${t.autoTo}）を使います。</span>`:""}
+   <div class="loss"><label>売り切れのあとで欲しかった人（販売機会ロス）　品を押すと1人ずつ増えます</label>
+     ${L.map(([no,q])=>{ const c=cands.find(x=>x.no===Number(no))||menu.find(x=>x.no===Number(no)); return `<div class="lossrow"><span>${esc(c?c.name:"番号"+no)}</span><span class="qty"><button type="button" data-lossdec="${no}" aria-label="1人へらす">−</button><span>${q}人</span><button type="button" data-loss="${no}" aria-label="1人ふやす">＋</button></span></div>`; }).join("")}
+     <div class="chips" style="margin-top:6px">${cands.map(c=>`<button type="button" data-loss="${c.no}" class="${c.out?"sold":""}">${esc(c.name)}${c.out?"（売切）":""}</button>`).join("")}</div>
+     <input data-m="lossOther" type="text" value="${esc(m.lossOther||"")}" placeholder="ほかに（持って来なかった品など）例：食パン 2人" style="margin-top:6px" aria-label="ほかに欲しかった物"></div>
+   <div><label for="mm-comment">お客さまの声</label><textarea id="mm-comment" data-m="comment">${esc(m.comment||"")}</textarea></div>
+   <div><label for="mm-want">増やしたいメニュー</label><textarea id="mm-want" data-m="want" placeholder="例：カレーパンをあと3個">${esc(m.want||"")}</textarea></div>
+   <div class="two"><div><label for="mm-next">次回の出張日</label><input id="mm-next" data-m="next" type="date" value="${esc(m.next||"")}"></div>
+     <div><label for="mm-nnote">（確認のメモ）</label><input id="mm-nnote" data-m="nextNote" type="text" value="${esc(m.nextNote||"")}" placeholder="例：担当の方に確認済み"></div></div>
+   <div><label for="mm-info">情報（行事・人数の変わり目など）</label><textarea id="mm-info" data-m="info">${esc(m.info||"")}</textarea></div>
+   <div class="row"><button class="btn" type="button" id="cp-memo">販売メモをExcel用にコピー（1行）</button></div>
+   <p class="note">書いた所はすぐ残ります。「LINE用にコピー」の文にも、販売メモが入ります。</p>`;
+}
+function renderMemo(){ const g=groups().find(x=>x.k===salesKey), el=$("memo"); if(g&&el) el.innerHTML=memoInner(g); }
 function renderSales(){
   const v=$("v-sales"); const G=groups();
   if(!G.length){ v.innerHTML=`<h2>売上</h2><div class="empty">まだ会計がありません。「レジ」でパンのボタンを押して「会計へ」→「会計する」と、ここに品ごとの売上が集まります。</div>`; return; }
@@ -422,6 +499,8 @@ function renderSales(){
      <ul>${fix.map(x=>`<li>${esc(x.r.name)}　${x.r.org||0} → <b>${x.to}</b></li>`).join("")}</ul>
      <span class="note">発注_統合_v2［販売実績入力］でこの日・この販売先を呼び出し、この品の B列を右の数にしてから、C6 に販売残を貼って【② 発注DBに登録】。${over?"持参より多く売れた品は、前の販売先の残りを売ったはずです。次からはレジ画面の【＋ ○○の残り ○個を足す】を押してから売ってください。":""}</span></div>`:""}
    <textarea id="cp-area" hidden readonly aria-label="コピーする文"></textarea>
+   <h2 id="memo-h">販売メモ</h2>
+   <div class="memo" id="memo">${memoInner(g)}</div>
    <h2>お名前ごと</h2>
    ${B.length? `<div class="tblwrap"><table class="tbl"><thead><tr><th>お名前</th><th class="r">回数</th><th class="r">個数</th><th class="r">金額</th><th>買ったパン</th></tr></thead><tbody>
      ${B.map(o=>`<tr><td>${esc(o.n)}</td><td class="r">${o.times}</td><td class="r">${o.pieces}</td><td class="r">${yen(o.amt)}</td><td>${esc(Object.entries(o.items).map(([k,q])=>k+"×"+q).join("、"))}</td></tr>`).join("")}
@@ -443,6 +522,11 @@ function copyText(kind){
     const cf = g.batch&&g.batch.carry ? `※ ${g.batch.carry.from} の残りを足して販売\n` : "", ct = g.batch&&g.batch.carriedTo&&S.batches[g.batch.carriedTo] ? `※ 残りは ${S.batches[g.batch.carriedTo].place} へ回しました\n` : "";
     txt = `【${jpDate(g.date)} ${g.place} 売上】\nお客さま ${sm.count}人　${sm.pieces}個\n合計 ${yen(sm.total)}（現金 ${yen(sm.cash)}／PayPay ${yen(sm.pp)}）\n${cf}${ct}\n` +
       sm.rows.filter(r=>r.qty||r.brought).map(r=>`・${r.name}　${r.qty}個${r.brought!=null?`（持参${r.brought}${r.carried?`うち足した${r.carried}`:""}・残り${r.brought-r.qty}）`:""}　${yen(r.amt)}`).join("\n");
+    const ml = memoLines(g, sm); if(ml.length) txt += "\n\n" + ml.join("\n");
+  } else if(kind==="memo"){
+    const m=memoOf(g.k), t=memoTimes(g), c=s=>String(s||"").replace(/[\t\r\n]+/g," ");
+    txt = ["日付\t販売先\t記入者\t天候\t気温\t販売時刻\t購入者数\t売上\t売り切れ後に欲しかった人\tお客さまの声\t増やしたいメニュー\t次回の出張日\t情報",
+      [g.date, g.place, m.who, m.wx, m.temp, (t.from||"")+"～"+(t.to||""), sm.count, sm.total, lossText(g), m.comment, m.want, nextText(m), m.info].map(c).join("\t")].join("\n");
   } else if(kind==="xls"){
     txt = ["日付\t販売先\t番号\t品名\t持参\t売れた\t残り\t金額"].concat(sm.rows.map(r=>`${g.date}\t${g.place}\t${r.no}\t${r.name}\t${r.brought??""}\t${r.qty}\t${r.brought!=null?r.brought-r.qty:""}\t${r.amt}`)).join("\n");
   } else if(kind==="zan"){
@@ -453,7 +537,10 @@ function copyText(kind){
   } else {
     txt = ["日付\t販売先\tお名前\t回数\t個数\t金額\t買ったパン"].concat(buyersOf(g).map(o=>`${g.date}\t${g.place}\t${o.n}\t${o.times}\t${o.pieces}\t${o.amt}\t${Object.entries(o.items).map(([k,q])=>k+"×"+q).join("、")}`)).join("\n");
   }
-  const ta=$("cp-area"); ta.value=txt;
+  putClip(txt, $("cp-area"));
+}
+function putClip(txt, ta){
+  ta.value=txt;
   const fallback=()=>{ ta.hidden=false; ta.focus(); ta.select(); toast("文を選びました。長押しでコピーしてください"); };
   try{ navigator.clipboard.writeText(txt).then(()=>toast("コピーしました"),fallback); }catch(e){ fallback(); }
 }
@@ -466,7 +553,7 @@ function askConfirm(msg, onYes){
 /* ---------- 設定（メニュー・名簿） ---------- */
 function renderMenu(){
   const v=$("v-menu"); const M=curMenu(); const start = M.length?M[0].start:"";
-  const rc = Object.entries(S.roster||{});
+  const rc = Object.entries(S.roster||{}), nn = Object.entries(S.newNames||{}).filter(([p,l])=>l.length);
   v.innerHTML = `<h2>メニュー（${esc(start)} からのメニュー）</h2>
    <p class="note">値段や名前を直すと、すぐにレジのボタンに反映されます。売らない品は「表示」を外してください。持参分のQRを読んだときは、持参したパンが必ず出ます。</p>
    <div class="tblwrap"><table class="tbl medit"><thead><tr><th>表示</th><th class="r">番号</th><th>品名</th><th class="r">値段</th><th>分類</th></tr></thead><tbody>
@@ -484,6 +571,11 @@ function renderMenu(){
    <textarea id="r-paste" placeholder="福井テレビ：山田、佐藤、鈴木&#10;アタゴ：田中、高橋"></textarea>
    <div class="row" style="margin-top:8px"><button class="btn" type="button" id="r-import">名簿を足す</button><button class="btn danger" type="button" id="r-clear">名簿を消す</button></div>
    <p class="note">今の名簿：${rc.length? rc.map(([c,l])=>esc(c)+" "+l.length+"人").join("／") : "まだ入っていません"}</p>
+   <h2>その場で足した名前</h2>
+   ${nn.length?`<div class="empty" style="color:var(--fg)">${nn.map(([p,l])=>`<div><b>${esc(rosterHead(p))}</b>：${esc(l.join("、"))}</div>`).join("")}</div>
+   <div class="row" style="margin-top:8px"><button class="btn primary" type="button" id="n-copy">事務所へ送る文をコピー</button><button class="btn danger" type="button" id="n-clear">足した名前を消す</button></div>
+   <textarea id="n-area" hidden readonly aria-label="コピーする文"></textarea>`:`<p class="note">まだありません。</p>`}
+   <p class="note">会計で名簿に無い名前を入れると、ここに残り、次からその販売先の候補に出ます（このスマホだけ）。ほかのスマホやExcelの［名簿］には自動では入りません。ときどき「事務所へ送る文をコピー」してLINEで送り、事務所で発注_統合_v2 の［名簿］のその得意先の列の下に書き足してください。書き足した名簿をまた「名簿を足す」で入れると、ここからは自然に消えます。</p>
    <h2>持参分の読み込み</h2>
    <p class="note">${S.batch?`今は ${jpDate(S.batch.date)} ${esc(S.batch.place)} の持参分が入っています。`:"今は持参分が入っていません。"}次の日は、新しい納品明細のQRを読めば入れ替わります。</p>
    ${S.batch?`<div class="row"><button class="btn" type="button" id="b-clear">持参分を外す（全部のパンで売る）</button></div>`:""}
@@ -500,14 +592,18 @@ function importMenu(){
 function importRoster(){
   const lines=$("r-paste").value.split(/\r?\n/).filter(l=>l.trim()!==""); const R={};
   // LINEで送る形：「福井テレビ：山田、佐藤、…」を1行に1社
-  lines.forEach(l=>{ const m=l.match(/^\s*[【\[]?名簿[】\]]?\s*$/); if(m) return; const p=l.match(/^\s*([^：:]+?)\s*[：:]\s*(.+)$/); if(p){ const names=p[2].split(/[、,，\/／]/).map(x=>x.trim()).filter(Boolean); if(names.length) R[p[1].trim()]=[...new Set(names)]; } });
+  lines.forEach(l=>{ const m=l.match(/^\s*[【\[]?名簿[】\]]?\s*$/); if(m) return; const p=l.match(/^\s*([^：:]+?)\s*[：:]\s*(.+)$/); if(p){ const names=p[2].split(/[、,，\/／]/).map(x=>x.trim()).filter(x=>x && x!=="-"); if(names.length) R[p[1].trim()]=[...new Set(names)]; } });
   // Excelの表をそのまま貼った形（1行目に得意先名、下に名前、タブ区切り）
   if(!Object.keys(R).length && lines.length>=2 && lines[0].includes("\t")){
     const head=lines[0].split("\t").map(x=>x.trim());
-    head.forEach((h,i)=>{ if(!h) return; const names=[]; lines.slice(1).forEach(l=>{ const c=(l.split("\t")[i]||"").trim(); if(c && !names.includes(c)) names.push(c); }); if(names.length) R[h]=names; });
+    head.forEach((h,i)=>{ if(!h) return; const names=[]; lines.slice(1).forEach(l=>{ const c=(l.split("\t")[i]||"").trim(); if(c && c!=="-" && !names.includes(c)) names.push(c); }); if(names.length) R[h]=names; });
   }
   const n=Object.keys(R).length; if(!n){ toast("名簿が読み取れませんでした。「得意先：名前、名前」の形で貼ってください"); return; }
-  askConfirm(`${n}の得意先・${Object.values(R).reduce((s,l)=>s+l.length,0)}人を名簿に足します（同じ得意先は入れ替わります。何回かに分けて貼ってもOK）。`, ()=>{ S.roster=Object.assign({},S.roster||{},R); save(); $("r-paste").value=""; renderMenu(); toast("名簿を足しました"); });
+  askConfirm(`${n}の得意先・${Object.values(R).reduce((s,l)=>s+l.length,0)}人を名簿に足します（同じ得意先は入れ替わります。何回かに分けて貼ってもOK）。`, ()=>{ S.roster=Object.assign({},S.roster||{},R); pruneNewNames(); save(); $("r-paste").value=""; renderMenu(); toast("名簿を足しました"); });
+}
+// 名簿に入った名前は「その場で足した名前」から外す
+function pruneNewNames(){
+  Object.keys(S.newNames||{}).forEach(p=>{ S.newNames[p]=S.newNames[p].filter(n=>!inRoster(p,n)); if(!S.newNames[p].length) delete S.newNames[p]; });
 }
 
 /* ---------- タブ ---------- */
@@ -525,6 +621,7 @@ $("place").addEventListener("input",e=>{ S.place=e.target.value; save(); });
 $("batchbar").addEventListener("click",e=>{
   const c=e.target.closest("[data-carry]"), u=e.target.closest("[data-uncarry]");
   if(c||u){ if(c) addCarry(c.dataset.carry); else removeCarry(S.batch.key); renderBatchBar(); renderGrid(); return; }
+  if(e.target.closest("[data-gomemo]")){ salesKey=S.batch.key; show("sales"); const h=$("memo-h"); if(h) h.scrollIntoView({block:"start"}); return; }
   const b=e.target.closest("[data-mode]"); if(!b) return; S.mode=b.dataset.mode; save(); renderBatchBar(); renderGrid(); });
 $("chips").addEventListener("click",e=>{ const b=e.target.closest("button[data-cat]"); if(!b) return; catFilter=b.dataset.cat; renderChips(); renderGrid(); });
 $("grid").addEventListener("click",e=>{ const b=e.target.closest(".item"); if(b) add(Number(b.dataset.no)); });
@@ -543,12 +640,23 @@ $("sheet").addEventListener("click",e=>{
 });
 $("sheet").addEventListener("input",e=>{ if(e.target.id==="bq"){ buyerQuery=e.target.value; const pos=e.target.selectionStart; renderBuyer(); const i=$("bq"); i.focus(); try{ i.setSelectionRange(pos,pos); }catch(_){} } });
 $("paid").addEventListener("input",renderChange);
-$("v-sales").addEventListener("change",e=>{ if(e.target.id==="sel"){ salesKey=e.target.value; renderSales(); } });
+$("v-sales").addEventListener("change",e=>{
+  if(e.target.id==="sel"){ salesKey=e.target.value; renderSales(); }
+  // 記入者は次から候補に出す
+  if(e.target.id==="mm-who"){ const w=e.target.value.trim(); if(w){ S.writers=(S.writers||[]).filter(x=>x!==w); S.writers.unshift(w); S.writers=S.writers.slice(0,15); save(); } }
+});
+$("v-sales").addEventListener("input",e=>{ const f=e.target.dataset.m; if(f&&salesKey){ memoOf(salesKey)[f]=e.target.value.trim(); save(); } });
 $("v-sales").addEventListener("click",e=>{
   const t=e.target;
-  if(t.id==="cp-line") copyText("line"); if(t.id==="cp-xls") copyText("xls"); if(t.id==="cp-zan") copyText("zan"); if(t.id==="cp-buyer") copyText("buyer");
+  if(t.id==="cp-line") copyText("line"); if(t.id==="cp-xls") copyText("xls"); if(t.id==="cp-zan") copyText("zan"); if(t.id==="cp-buyer") copyText("buyer"); if(t.id==="cp-memo") copyText("memo");
+  const wx=t.closest("[data-wx]"), ls=t.closest("[data-loss]"), ld=t.closest("[data-lossdec]");
+  if(wx||ls||ld){ const m=memoOf(salesKey);
+    if(wx) m.wx = m.wx===wx.dataset.wx ? "" : wx.dataset.wx;
+    if(ls){ m.loss=m.loss||{}; m.loss[ls.dataset.loss]=(m.loss[ls.dataset.loss]||0)+1; }
+    if(ld){ m.loss=m.loss||{}; m.loss[ld.dataset.lossdec]=Math.max(0,(m.loss[ld.dataset.lossdec]||0)-1); }
+    save(); renderMemo(); return; }
   const u=t.closest("[data-undo]"); if(u) askConfirm("この会計を取り消しますか？", ()=>{ S.sales=S.sales.filter(s=>s.id!==u.dataset.undo); save(); renderSales(); toast("取り消しました"); });
-  if(t.id==="del-group") askConfirm("この日・この販売先の記録を全部消します。先にコピーしましたか？", ()=>{ const k=salesKey; S.sales=S.sales.filter(s=>(s.batchKey||(s.date+"|"+s.place))!==k); const db=S.batches[k]; if(db&&db.carry&&S.batches[db.carry.fromKey]) delete S.batches[db.carry.fromKey].carriedTo; Object.values(S.batches).forEach(b=>{ if(b.carriedTo===k) delete b.carriedTo; }); delete S.batches[k]; if(S.batch&&S.batch.key===k) S.batch=null; salesKey=null; save(); renderSales(); toast("記録を消しました"); });
+  if(t.id==="del-group") askConfirm("この日・この販売先の記録を全部消します。先にコピーしましたか？", ()=>{ const k=salesKey; S.sales=S.sales.filter(s=>(s.batchKey||(s.date+"|"+s.place))!==k); const db=S.batches[k]; if(db&&db.carry&&S.batches[db.carry.fromKey]) delete S.batches[db.carry.fromKey].carriedTo; Object.values(S.batches).forEach(b=>{ if(b.carriedTo===k) delete b.carriedTo; }); delete S.batches[k]; if(S.notes) delete S.notes[k]; if(S.batch&&S.batch.key===k) S.batch=null; salesKey=null; save(); renderSales(); toast("記録を消しました"); });
   const cf=t.closest("[data-cf]"); if(cf){ const fn=pendingConfirm; pendingConfirm=null; t.closest(".confirm").remove(); if(cf.dataset.cf==="yes"&&fn) fn(); }
 });
 function menuRowName(no){ const m=item(no); return m?m.name:null; }
@@ -566,6 +674,8 @@ $("v-menu").addEventListener("click",e=>{
   if(t.id==="m-import") importMenu();
   if(t.id==="m-reset") askConfirm("最初のメニューに戻しますか？（直した値段や名前も元に戻ります）", ()=>{ S.menu=DEFAULT_MENU.map(r=>r.slice()); S.cats={}; S.hidden={}; save(); renderMenu(); toast("最初のメニューに戻しました"); });
   if(t.id==="r-import") importRoster();
+  if(t.id==="n-copy") putClip("【名簿に足す名前】\n"+Object.entries(S.newNames||{}).filter(([p,l])=>l.length).map(([p,l])=>rosterHead(p)+"："+l.join("、")).join("\n"), $("n-area"));
+  if(t.id==="n-clear") askConfirm("その場で足した名前を消しますか？（事務所へ送ってから消してください）", ()=>{ S.newNames={}; save(); renderMenu(); toast("足した名前を消しました"); });
   if(t.id==="r-clear") askConfirm("このスマホの名簿を消しますか？", ()=>{ S.roster={}; save(); renderMenu(); toast("名簿を消しました"); });
   if(t.id==="b-clear") askConfirm("持参分を外しますか？（売上の記録は残ります）", ()=>{ S.batch=null; save(); renderMenu(); toast("持参分を外しました"); });
   const cf=t.closest("[data-cf]"); if(cf){ const fn=pendingConfirm; pendingConfirm=null; t.closest(".confirm").remove(); if(cf.dataset.cf==="yes"&&fn) fn(); }
@@ -576,6 +686,8 @@ async function wake(){ try{ if("wakeLock" in navigator) await navigator.wakeLock
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") wake(); });
 wake();
 
+// 前に会計で入れた名前も「その場で足した名前」に入れる（1回だけ）
+if(!S.nnMigrated){ S.sales.forEach(s=>rememberName(s.place, s.buyer)); S.nnMigrated=true; save(); }
 readHash();
 $("place").value=S.place||"";
 show("reg");
