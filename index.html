@@ -462,7 +462,7 @@ function memoInner(g){
      <div><label for="mm-nnote">（確認のメモ）</label><input id="mm-nnote" data-m="nextNote" type="text" value="${esc(m.nextNote||"")}" placeholder="例：担当の方に確認済み"></div></div>
    <div><label for="mm-info">情報（行事・人数の変わり目など）</label><textarea id="mm-info" data-m="info">${esc(m.info||"")}</textarea></div>
    <div class="row"><button class="btn" type="button" id="cp-memo">販売メモをExcel用にコピー（1行）</button></div>
-   <p class="note">書いた所はすぐ残ります。「LINE用にコピー」の文にも、販売メモが入ります。</p>`;
+   <p class="note">書いた所はすぐ残ります。「LINE用にコピー」の文にも、販売メモが入ります。Excel用の1行は、発注_統合_v2 の［販売メモ］の表の A列のいちばん下の空いたセルに貼ってください。</p>`;
 }
 function renderMemo(){ const g=groups().find(x=>x.k===salesKey), el=$("memo"); if(g&&el) el.innerHTML=memoInner(g); }
 function renderSales(){
@@ -525,8 +525,8 @@ function copyText(kind){
     const ml = memoLines(g, sm); if(ml.length) txt += "\n\n" + ml.join("\n");
   } else if(kind==="memo"){
     const m=memoOf(g.k), t=memoTimes(g), c=s=>String(s||"").replace(/[\t\r\n]+/g," ");
-    txt = ["日付\t販売先\t記入者\t天候\t気温\t販売時刻\t購入者数\t売上\t売り切れ後に欲しかった人\tお客さまの声\t増やしたいメニュー\t次回の出張日\t情報",
-      [g.date, g.place, m.who, m.wx, m.temp, (t.from||"")+"～"+(t.to||""), sm.count, sm.total, lossText(g), m.comment, m.want, nextText(m), m.info].map(c).join("\t")].join("\n");
+    // 発注_統合_v2［販売メモ］の表と同じ並び。見出しは表にあるので、1行だけ
+    txt = [g.date, g.place, m.who, m.wx, m.temp, (t.from||"")+"～"+(t.to||""), sm.count, sm.total, lossText(g), m.comment, m.want, nextText(m), m.info].map(c).join("\t");
   } else if(kind==="xls"){
     txt = ["日付\t販売先\t番号\t品名\t持参\t売れた\t残り\t金額"].concat(sm.rows.map(r=>`${g.date}\t${g.place}\t${r.no}\t${r.name}\t${r.brought??""}\t${r.qty}\t${r.brought!=null?r.brought-r.qty:""}\t${r.amt}`)).join("\n");
   } else if(kind==="zan"){
