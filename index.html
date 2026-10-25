@@ -407,6 +407,8 @@ function summarize(g){
   const rows = Object.values(items).sort((a,b)=>a.no-b.no);
   return {rows, cash, pp, total:cash+pp, count:g.list.length, pieces:rows.reduce((s,r)=>s+r.qty,0), menu};
 }
+// 発注_統合_v2 の B列（持参数）を直す品：前の販売先から足した品と、持参より多く売れた品
+function fixList(g, sm){ return g.batch ? sm.rows.filter(r=>r.brought!=null||r.qty).map(r=>({r, to:Math.max(r.brought||0, r.qty)})).filter(x=>x.to!==(x.r.org||0)) : []; }
 function buyersOf(g){
   const b={}; g.list.forEach(s=>{ const n=s.buyer||"（名前なし）"; const o=b[n]=b[n]||{n,times:0,pieces:0,amt:0,items:{}}; o.times++; o.amt+=s.total; s.items.forEach(i=>{ o.pieces+=i.qty; o.items[i.name]=(o.items[i.name]||0)+i.qty; }); });
   return Object.values(b).sort((a,b)=>b.amt-a.amt);
@@ -471,7 +473,7 @@ function renderSales(){
   if(!salesKey || !G.find(x=>x.k===salesKey)) salesKey=G[0].k;
   const g=G.find(x=>x.k===salesKey), sm=summarize(g), hasB=!!g.batch, B=buyersOf(g);
   // 発注_統合_v2 の B列（持参数）を直す品：前の販売先から足した品と、持参より多く売れた品
-  const fix = hasB ? sm.rows.filter(r=>r.brought!=null||r.qty).map(r=>({r, to:Math.max(r.brought||0, r.qty)})).filter(x=>x.to!==(x.r.org||0)) : [];
+  const fix = fixList(g, sm);
   const over = hasB && sm.rows.some(r=>r.qty>(r.brought||0));
   const cfrom = hasB && g.batch.carry ? g.batch.carry.from : "", cto = hasB && g.batch.carriedTo && S.batches[g.batch.carriedTo] ? S.batches[g.batch.carriedTo].place : "";
   v.innerHTML = `<h2>売上</h2>
@@ -522,6 +524,7 @@ function copyText(kind){
     const cf = g.batch&&g.batch.carry ? `※ ${g.batch.carry.from} の残りを足して販売\n` : "", ct = g.batch&&g.batch.carriedTo&&S.batches[g.batch.carriedTo] ? `※ 残りは ${S.batches[g.batch.carriedTo].place} へ回しました\n` : "";
     txt = `【${jpDate(g.date)} ${g.place} 売上】\nお客さま ${sm.count}人　${sm.pieces}個\n合計 ${yen(sm.total)}（現金 ${yen(sm.cash)}／PayPay ${yen(sm.pp)}）\n${cf}${ct}\n` +
       sm.rows.filter(r=>r.qty||r.brought).map(r=>`・${r.name}　${r.qty}個${r.brought!=null?`（持参${r.brought}${r.carried?`うち足した${r.carried}`:""}・残り${r.brought-r.qty}）`:""}　${yen(r.amt)}`).join("\n");
+    const fx = fixList(g, sm); if(fx.length) txt += "\n\n【事務所へ】販売残を貼る前に、B列（持参数）を直す品\n" + fx.map(x=>`・${x.r.name}　${x.r.org||0} → ${x.to}`).join("\n");
     const ml = memoLines(g, sm); if(ml.length) txt += "\n\n" + ml.join("\n");
   } else if(kind==="memo"){
     const m=memoOf(g.k), t=memoTimes(g), c=s=>String(s||"").replace(/[\t\r\n]+/g," ");
