@@ -81,7 +81,7 @@ textarea{min-height:5.5em}
 <div class="wrap">
   <h1><span class="dot" aria-hidden="true"></span>手作りパン工房 ひまわり　ご予約</h1>
   <p class="note" id="lead">お届け日を選んで、パンを押してください（1回押すと1個）。</p>
-  <div id="app"><div class="loading">メニューを読み込んでいます…</div></div>
+  <div id="app"><div class="loading">メニューを読み込んでいます…<br><span class="note">はじめは10秒ほどかかることがあります。このままお待ちください。</span></div></div>
 </div>
 <div class="bar" id="bar" hidden>
   <div class="in">
@@ -134,7 +134,7 @@ function build(info){
     }
   });
   // 前に入れたものを入れておく
-  fields.forEach(f=>{ if(f.kind!=="date" && f.kind!=="msg" && mem[f.title]!=null){ vals[f.id]=mem[f.title]; if(mem[f.title+"_o"]!=null) vals[f.id+"_o"]=mem[f.title+"_o"]; } });
+  fields.forEach(f=>{ if(f.kind!=="date" && f.kind!=="msg" && mem[f.title]!=null && vals[f.id]===undefined){ vals[f.id]=mem[f.title]; if(mem[f.title+"_o"]!=null) vals[f.id+"_o"]=mem[f.title+"_o"]; } });
 }
 function kindOf(it){
   const t = it.title;
@@ -303,14 +303,22 @@ function onField(e){
 document.addEventListener("input", onField);
 document.addEventListener("change", onField);
 
+// 前に読んだメニューをすぐに出し、裏で最新のメニューを読み直す（受け口は目を覚ますのに10秒ほどかかることがある）
+const FKEY = KEY + "-form";
 async function load(){
+  let shown = "";
+  try{ const c = localStorage.getItem(FKEY); if(c){ const info = JSON.parse(c); if(info && Array.isArray(info.items) && info.accepting){ build(info); render(); shown = c; } } }catch(e){}
   try{
     if(!API) throw new Error("受け口のアドレスがまだ入っていません");
-    const res = await fetch(API); const info = await res.json();
+    const res = await fetch(API); const txt = await res.text(); const info = JSON.parse(txt);
     if(!info || !Array.isArray(info.items)) throw new Error("メニューを読めませんでした");
-    if(!info.accepting){ $("app").innerHTML = `<div class="err">今は予約を受け付けていません。</div>`; return; }
-    build(info); render();
+    try{ localStorage.setItem(FKEY, txt); }catch(e){}
+    if(!info.accepting){ $("app").innerHTML = `<div class="err">今は予約を受け付けていません。</div>`; $("bar").hidden = true; return; }
+    if(txt === shown) return;            // 前と同じなら、そのまま
+    build(info);
+    if(step==="pick" || !shown) render(); // 入力中の画面は描き直さない（次に画面が変わるときに新しい中身になる）
   }catch(e){
+    if(shown) return;                    // 前のメニューで続けられる（送るときに受け口が確かめる）
     $("app").innerHTML = `<div class="err">メニューを読み込めませんでした（${esc(e.message||e)}）。<br>少しして開き直すか、<a href="${FORM_URL}">Googleフォーム</a> からご予約ください。</div>`;
   }
 }
