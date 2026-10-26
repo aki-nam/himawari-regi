@@ -73,6 +73,8 @@ textarea{min-height:5.5em}
 .total .v{font-size:1.8rem;font-variant-numeric:tabular-nums}
 .err{background:color-mix(in srgb,var(--danger) 10%,var(--surface));border:1px solid var(--danger);border-radius:12px;padding:10px 12px;color:var(--fg)}
 .done{border-left:6px solid var(--ok)}
+.notice{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--sun);border-radius:12px;padding:10px 12px;margin-bottom:12px;white-space:pre-line}
+.notice b{font-family:var(--f-display);display:block;margin-bottom:2px}
 .loading{padding:40px 0;text-align:center;color:var(--muted)}
 @media (prefers-reduced-motion: reduce){.item{transition:none}}
 </style></head><body>
@@ -109,14 +111,17 @@ function catOf(n){
 }
 
 let F = null;          // フォームの中身
-let breads = [], fields = [], cart = {}, vals = {}, step = "pick", catFilter = "すべて", sending = false;
+let breads = [], fields = [], notices = [], cart = {}, vals = {}, step = "pick", catFilter = "すべて", sending = false;
 let mem = {}; try{ mem = JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){}
 function remember(){ try{ localStorage.setItem(KEY, JSON.stringify(mem)); }catch(e){} }
 
 /* ---------- フォームの質問を、パン（個数を選ぶ欄）とそのほかに分ける ---------- */
 function build(info){
-  F = info; breads = []; fields = [];
+  F = info; breads = []; fields = []; notices = [];
   info.items.forEach(it=>{
+    // フォームの「タイトルと説明」で、タイトルが「お知らせ」で始まるものを、画面のいちばん上に出す
+    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /^[\s【\[「]*お知らせ/.test(it.title) && (it.help||"").trim()){
+      notices.push({title:it.title.trim().replace(/^[【\[「]|[】\]」]$/g,""), help:it.help.trim()}); return; }
     const t = nk(it.title);
     const m = t.match(/^(.*?)\s*([0-9]{2,5})\s*円?$/);
     if(it.type==="LIST" && m && (it.choices||[]).some(c=>/^1$/.test(nk(c)))){
@@ -182,7 +187,8 @@ function dateField(){
 function renderPick(){
   const dt = chosenDate();
   let list = breads.filter(b=>catFilter==="すべて"||b.cat===catFilter);
-  $("app").innerHTML = `<div class="box">${dateField()}</div>
+  $("app").innerHTML = `${notices.map(n=>`<div class="notice" role="note"><b>${esc(n.title)}</b>${esc(n.help)}</div>`).join("")}
+    <div class="box">${dateField()}</div>
     <h2>パンを選ぶ</h2>
     <div class="chips">${["すべて",...CATS].map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("")}</div>
     <div class="grid">${list.map(b=>{ const a=availability(b,dt), q=cart[b.id]||0;
