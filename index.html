@@ -119,7 +119,8 @@ textarea{width:100%;min-height:9em}
 .fix ul{margin:4px 0 0;padding-left:1.2em}
 .item .rem{font-size:.85rem;font-weight:700;color:var(--accent)}
 .item .rem.zero{color:var(--danger)}
-.item.out{opacity:.55}
+.item.out .nm,.item.out .pr{opacity:.55}
+.item .want{align-self:flex-start;font-size:.8rem;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid var(--danger);color:var(--danger);background:var(--surface)}
 .buyer{display:flex;flex-direction:column;gap:6px}
 .buyer .chips{flex-wrap:wrap;overflow:visible;max-height:9.5em;overflow-y:auto}
 .buyer .chips button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
@@ -261,7 +262,9 @@ function readHash(){
     S.batches[key] = nb;
     const isNew = !S.batch || S.batch.key!==key;
     S.batch = {key, date, place, items:nb.items}; S.place = place; S.mode = "batch"; save();
-    if(isNew){ cart={}; setTimeout(()=>toast(jpDate(date)+"　"+place+" の持参分（"+items.length+"品）を読み込みました"),300); }
+    // 初めて読んだQRで、同じ日の前の販売先に残りがあれば、自動で持参に足す（持ち帰るときは【足した分を外す】）
+    const auto = (isNew && !old) ? autoCarry() : "";
+    if(isNew){ cart={}; setTimeout(()=>toast(jpDate(date)+"　"+place+" の持参分（"+items.length+"品）を読み込みました"+auto),300); }
   }catch(e){ setTimeout(()=>toast("QRの内容を読み取れませんでした"),300); }
 }
 
@@ -278,11 +281,18 @@ function carryCands(){
     .map(([k,b])=>{ const rest=restOf(k); return {k, place:b.place, rest, n:rest.reduce((s,i)=>s+i.qty,0)}; }).filter(x=>x.n>0);
 }
 function setBatchItems(key){ if(S.batch && S.batch.key===key) S.batch.items=S.batches[key].items; }
-function addCarry(fromKey){
+function addCarry(fromKey, quiet){
   const c=carryCands().find(x=>x.k===fromKey); if(!c) return; const key=S.batch.key, b=S.batches[key];
   b.qr = b.items.map(i=>({no:i.no,qty:i.qty})); b.carry = {fromKey, from:c.place, items:c.rest};
   b.items = mergeItems(b.qr, c.rest); S.batches[fromKey].carriedTo = key; setBatchItems(key); save();
-  toast(c.place+" の残り "+c.n+"個を持参に足しました");
+  if(!quiet) toast(c.place+" の残り "+c.n+"個を持参に足しました");
+}
+// いちばん最近まで売っていた販売先の残りを足す。足したら案内の文を返す
+function autoCarry(){
+  const C=carryCands(); if(!C.length) return "";
+  const lastTs=k=>S.sales.filter(s=>s.batchKey===k).reduce((m,s)=>Math.max(m,s.ts),0);
+  C.sort((a,b)=>lastTs(b.k)-lastTs(a.k)); const c=C[0];
+  addCarry(c.k, true); return "。"+c.place+" の残り "+c.n+"個も足しました（持ち帰るときは【足した分を外す】）";
 }
 function removeCarry(key){
   const b=S.batches[key]; if(!b || !b.carry) return;
@@ -320,6 +330,7 @@ function renderGrid(){
       return `<button type="button" class="item${r!==null&&r<=0?" out":""}" data-no="${m.no}" data-cat="${esc(m.cat)}">
       <span class="nm">${esc(m.name)}</span><span class="pr">${yen(m.price)}</span>
       ${r!==null?`<span class="rem${r<=0?" zero":""}">${r>0?"残り "+r+"個":(r===0?"売り切れ":"持参より "+(-r)+"個多い")}</span>`:""}
+      ${r!==null&&r<=0?`<span class="want" data-want="${m.no}" role="button" aria-label="${esc(m.name)}を欲しかった人を1人ふやす">欲しかった＋1${wantOf(m.no)?`（${wantOf(m.no)}人）`:""}</span>`:""}
       ${cart[m.no]?`<span class="badge">${cart[m.no]}</span>`:""}</button>`; }).join("")
     : `<div class="empty">表示するパンがありません。分類を「すべて」にするか、「設定」で表示をオンにしてください。</div>`;
 }
@@ -328,6 +339,9 @@ function renderBar(){
   $("open").disabled = cartCount()===0; $("clear").disabled = cartCount()===0;
   $("bar").hidden = tab!=="reg";
 }
+function wantOf(no){ if(!S.batch||!S.notes||!S.notes[S.batch.key]) return 0; return (S.notes[S.batch.key].loss||{})[no]||0; }
+function addWant(no){ if(!S.batch) return; const m=memoOf(S.batch.key); m.loss=m.loss||{}; m.loss[no]=(m.loss[no]||0)+1; save(); renderGrid();
+  const it=item(no); toast((it?it.name:"")+"　欲しかった人 "+m.loss[no]+"人（販売メモに入れました）"); }
 function add(no){ cart[no]=(cart[no]||0)+1; renderGrid(); renderBar(); }
 
 /* ---------- 会計 ---------- */
@@ -627,7 +641,10 @@ $("batchbar").addEventListener("click",e=>{
   if(e.target.closest("[data-gomemo]")){ salesKey=S.batch.key; show("sales"); const h=$("memo-h"); if(h) h.scrollIntoView({block:"start"}); return; }
   const b=e.target.closest("[data-mode]"); if(!b) return; S.mode=b.dataset.mode; save(); renderBatchBar(); renderGrid(); });
 $("chips").addEventListener("click",e=>{ const b=e.target.closest("button[data-cat]"); if(!b) return; catFilter=b.dataset.cat; renderChips(); renderGrid(); });
-$("grid").addEventListener("click",e=>{ const b=e.target.closest(".item"); if(b) add(Number(b.dataset.no)); });
+$("grid").addEventListener("click",e=>{
+  // 売り切れのあとで欲しかった人（販売機会ロス）は、販売メモに1人ずつ足す
+  const w=e.target.closest("[data-want]"); if(w){ addWant(Number(w.dataset.want)); return; }
+  const b=e.target.closest(".item"); if(b) add(Number(b.dataset.no)); });
 $("open").addEventListener("click",openSheet);
 $("clear").addEventListener("click",()=>{ cart={}; renderGrid(); renderBar(); toast("クリアしました"); });
 $("back").addEventListener("click",closeSheet);
