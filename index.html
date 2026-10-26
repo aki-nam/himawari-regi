@@ -215,7 +215,7 @@ function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} 
 
 let cart = {};          // 番号 -> 個数
 let pay = "現金", buyer = "", buyerQuery = "";
-let catFilter = "すべて", tab = "reg", pendingConfirm = null, salesKey = null;
+let catFilter = "すべて", tab = "reg", pendingConfirm = null, salesKey = null, editBrought = false;
 
 const $ = id => document.getElementById(id);
 const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
@@ -257,9 +257,10 @@ function readHash(){
     const key = date+"|"+place;
     // QRを読み直しても、前の販売先から足した分は消さない
     const old = S.batches[key], nb = {date, place, items};
-    if(old && old.carry){ nb.qr = items; nb.carry = old.carry; nb.items = mergeItems(items, old.carry.items); }
+    // 持参数を直した分も消さない
+    if(old && (old.carry || old.adj)){ nb.qr = items; if(old.carry) nb.carry = old.carry; if(old.adj) nb.adj = old.adj; }
     if(old && old.carriedTo) nb.carriedTo = old.carriedTo;
-    S.batches[key] = nb;
+    S.batches[key] = nb; recompute(key);
     const isNew = !S.batch || S.batch.key!==key;
     S.batch = {key, date, place, items:nb.items}; S.place = place; S.mode = "batch"; save();
     // 初めて読んだQRで、同じ日の前の販売先に残りがあれば、自動で持参に足す（持ち帰るときは【足した分を外す】）
@@ -281,10 +282,19 @@ function carryCands(){
     .map(([k,b])=>{ const rest=restOf(k); return {k, place:b.place, rest, n:rest.reduce((s,i)=>s+i.qty,0)}; }).filter(x=>x.n>0);
 }
 function setBatchItems(key){ if(S.batch && S.batch.key===key) S.batch.items=S.batches[key].items; }
+// 持参 ＝ QRの数 ＋ 前の販売先から足した数 ＋ その場で直した数（adj）
+function recompute(key){
+  const b=S.batches[key]; if(!b) return;
+  if(!b.qr){ if(!b.carry && !b.adj) return; b.qr=b.items.map(i=>({no:i.no,qty:i.qty})); }
+  const m={}; mergeItems(b.qr, b.carry?b.carry.items:[]).forEach(i=>m[i.no]=i.qty);
+  Object.entries(b.adj||{}).forEach(([no,d])=>{ m[no]=(m[no]||0)+d; });
+  b.items = Object.keys(m).map(Number).sort((x,y)=>x-y).map(no=>({no,qty:m[no]})).filter(i=>i.qty>0);
+  setBatchItems(key);
+}
 function addCarry(fromKey, quiet){
   const c=carryCands().find(x=>x.k===fromKey); if(!c) return; const key=S.batch.key, b=S.batches[key];
-  b.qr = b.items.map(i=>({no:i.no,qty:i.qty})); b.carry = {fromKey, from:c.place, items:c.rest};
-  b.items = mergeItems(b.qr, c.rest); S.batches[fromKey].carriedTo = key; setBatchItems(key); save();
+  if(!b.qr) b.qr = b.items.map(i=>({no:i.no,qty:i.qty})); b.carry = {fromKey, from:c.place, items:c.rest};
+  S.batches[fromKey].carriedTo = key; recompute(key); save();
   if(!quiet) toast(c.place+" の残り "+c.n+"個を持参に足しました");
 }
 // いちばん最近まで売っていた販売先の残りを足す。足したら案内の文を返す
@@ -297,7 +307,7 @@ function autoCarry(){
 function removeCarry(key){
   const b=S.batches[key]; if(!b || !b.carry) return;
   if(S.batches[b.carry.fromKey]) delete S.batches[b.carry.fromKey].carriedTo;
-  b.items = b.qr; delete b.qr; delete b.carry; setBatchItems(key); save();
+  delete b.carry; recompute(key); save();
   toast("足した分を外しました");
 }
 
@@ -311,7 +321,7 @@ function renderBatchBar(){
   if(tab!=="reg" || !S.batch){ b.innerHTML = (tab==="reg") ? `<div class="banner"><span class="note">納品明細の「レジ用QR」をスマホのカメラで読むと、その日に持って行ったパンだけが並び、残りの数が出ます。</span></div>` : ""; return; }
   const n = S.batch.items.reduce((s,i)=>s+i.qty,0);
   b.innerHTML = `<div class="banner"><span><b>${jpDate(S.batch.date)}　${esc(S.batch.place)}</b>　持参 ${S.batch.items.length}品・${n}個</span>
-    <span class="chips" style="padding:0"><button type="button" data-mode="batch" aria-pressed="${S.mode==="batch"}">持参分だけ</button><button type="button" data-mode="all" aria-pressed="${S.mode!=="batch"}">全部のパン</button><button type="button" data-gomemo="1">販売メモ</button></span></div>`;
+    <span class="chips" style="padding:0"><button type="button" data-mode="batch" aria-pressed="${S.mode==="batch"}">持参分だけ</button><button type="button" data-mode="all" aria-pressed="${S.mode!=="batch"}">全部のパン</button><button type="button" data-gomemo="1">販売メモ</button><button type="button" data-gobq="1">持参数を直す</button></span></div>`;
   const cur=S.batches[S.batch.key], C=carryCands();
   if(cur && cur.carry){ const n=cur.carry.items.reduce((s,i)=>s+i.qty,0);
     b.innerHTML += `<div class="carry"><span class="on">＋ ${esc(cur.carry.from)} の残り ${n}個を足しています</span><button type="button" data-uncarry="1">足した分を外す</button></div>`; }
@@ -417,11 +427,31 @@ function summarize(g){
   if(g.batch) g.batch.items.forEach(b=>{ const m=menu.find(x=>x.no===b.no); const nm=m?m.name:("番号"+b.no); const k=b.no+"|"+nm; items[k]=items[k]||{no:b.no,name:nm,qty:0,amt:0}; items[k].brought=b.qty; });
   // 前の販売先から足した数と、QRの持参数（発注DBの数量）
   if(g.batch){ const add={}, org={}; (g.batch.carry?g.batch.carry.items:[]).forEach(i=>add[i.no]=i.qty); (g.batch.qr||g.batch.items).forEach(i=>org[i.no]=i.qty);
-    Object.values(items).forEach(o=>{ o.carried=add[o.no]||0; o.org=org[o.no]||0; }); }
+    const adj=g.batch.adj||{};
+    Object.values(items).forEach(o=>{ o.carried=add[o.no]||0; o.org=org[o.no]||0; o.adj=adj[o.no]||0; }); }
   const rows = Object.values(items).sort((a,b)=>a.no-b.no);
   return {rows, cash, pp, total:cash+pp, count:g.list.length, pieces:rows.reduce((s,r)=>s+r.qty,0), menu};
 }
-// 発注_統合_v2 の B列（持参数）を直す品：前の販売先から足した品と、持参より多く売れた品
+/* ---------- 持参数を直す（QRを印刷したあとで、持って行く数を変えたとき） ---------- */
+function broughtEditor(g, sm){
+  if(!editBrought) return `<div class="row" style="margin-top:8px"><button class="btn" type="button" id="bq-open">持参数を直す</button></div>
+    <p class="note">QRを印刷したあとで持って行く数を変えたときに使います。直した数は「B列（持参数）を直す品」とLINEの報告に出ます。</p>`;
+  const have={}; g.batch.items.forEach(i=>have[i.no]=i.qty);
+  const base={}; mergeItems(g.batch.qr||g.batch.items, g.batch.carry?g.batch.carry.items:[]).forEach(i=>base[i.no]=i.qty);
+  return `<div class="fix" style="border-left-color:var(--sun)"><b>持参数を直す</b>　<span class="note">実際に持って来た数にしてください（QRに無い品も足せます）</span>
+    <div class="lines" style="margin-top:6px">${sm.menu.map(m=>{ const q=have[m.no]||0, b0=base[m.no]||0;
+      return `<div class="line"><div class="n">${esc(m.name)}${q!==b0?`<small>QR・足した分では ${b0}</small>`:""}</div>
+        <div class="qty"><button type="button" data-bqdec="${m.no}" aria-label="${esc(m.name)}の持参を1つへらす">−</button><span>${q}</span><button type="button" data-bqinc="${m.no}" aria-label="${esc(m.name)}の持参を1つふやす">＋</button></div><div></div></div>`; }).join("")}</div>
+    <div class="row" style="margin-top:8px"><button class="btn primary" type="button" id="bq-close">直し終わり</button><button class="btn danger" type="button" id="bq-reset">直した分を元に戻す</button></div></div>`;
+}
+function changeBrought(key, no, d){
+  const b=S.batches[key]; if(!b) return;
+  const cur=(b.items.find(i=>i.no===no)||{qty:0}).qty; if(d<0 && cur<=0) return;
+  if(!b.qr) b.qr=b.items.map(i=>({no:i.no,qty:i.qty}));
+  b.adj=b.adj||{}; b.adj[no]=(b.adj[no]||0)+d; if(!b.adj[no]) delete b.adj[no]; if(!Object.keys(b.adj).length) delete b.adj;
+  recompute(key); save();
+}
+// 発注_統合_v2 の B列（持参数）を直す品：前の販売先から足した品・直した品・持参より多く売れた品
 function fixList(g, sm){ return g.batch ? sm.rows.filter(r=>r.brought!=null||r.qty).map(r=>({r, to:Math.max(r.brought||0, r.qty)})).filter(x=>x.to!==(x.r.org||0)) : []; }
 function buyersOf(g){
   const b={}; g.list.forEach(s=>{ const n=s.buyer||"（名前なし）"; const o=b[n]=b[n]||{n,times:0,pieces:0,amt:0,items:{}}; o.times++; o.amt+=s.total; s.items.forEach(i=>{ o.pieces+=i.qty; o.items[i.name]=(o.items[i.name]||0)+i.qty; }); });
@@ -501,8 +531,9 @@ function renderSales(){
    </div>
    <h2>品ごとの売上${hasB?"と販売残":""}</h2>
    <div class="tblwrap"><table class="tbl"><thead><tr><th>品名</th>${hasB?`<th class="r">持参</th>`:""}<th class="r">売れた</th>${hasB?`<th class="r">残り</th>`:""}<th class="r">金額</th></tr></thead><tbody>
-     ${sm.rows.map(r=>{ const rest = r.brought==null?null:r.brought-r.qty; return `<tr><td>${esc(r.name)}</td>${hasB?`<td class="r">${r.brought==null?"—":r.brought}${r.carried?`<br><span class="note">うち足した${r.carried}</span>`:""}</td>`:""}<td class="r${r.qty?"":" zero"}">${r.qty}</td>${hasB?`<td class="r${rest>0?"":" zero"}">${rest==null?"—":rest}</td>`:""}<td class="r">${yen(r.amt)}</td></tr>`; }).join("")}
+     ${sm.rows.map(r=>{ const rest = r.brought==null?null:r.brought-r.qty; return `<tr><td>${esc(r.name)}</td>${hasB?`<td class="r">${r.brought==null?"—":r.brought}${r.carried?`<br><span class="note">うち足した${r.carried}</span>`:""}${r.adj?`<br><span class="note">直した${r.adj>0?"＋":"−"}${Math.abs(r.adj)}</span>`:""}</td>`:""}<td class="r${r.qty?"":" zero"}">${r.qty}</td>${hasB?`<td class="r${rest>0?"":" zero"}">${rest==null?"—":rest}</td>`:""}<td class="r">${yen(r.amt)}</td></tr>`; }).join("")}
    </tbody></table></div>
+   ${hasB?broughtEditor(g, sm):""}
    <div class="row" style="margin-top:10px">
      <button class="btn primary" type="button" id="cp-line">LINE用にコピー</button>
      <button class="btn" type="button" id="cp-xls">Excel用にコピー</button>
@@ -638,6 +669,7 @@ $("place").addEventListener("input",e=>{ S.place=e.target.value; save(); });
 $("batchbar").addEventListener("click",e=>{
   const c=e.target.closest("[data-carry]"), u=e.target.closest("[data-uncarry]");
   if(c||u){ if(c) addCarry(c.dataset.carry); else removeCarry(S.batch.key); renderBatchBar(); renderGrid(); return; }
+  if(e.target.closest("[data-gobq]")){ salesKey=S.batch.key; editBrought=true; show("sales"); const h=$("bq-close"); if(h) h.closest(".fix").scrollIntoView({block:"start"}); return; }
   if(e.target.closest("[data-gomemo]")){ salesKey=S.batch.key; show("sales"); const h=$("memo-h"); if(h) h.scrollIntoView({block:"start"}); return; }
   const b=e.target.closest("[data-mode]"); if(!b) return; S.mode=b.dataset.mode; save(); renderBatchBar(); renderGrid(); });
 $("chips").addEventListener("click",e=>{ const b=e.target.closest("button[data-cat]"); if(!b) return; catFilter=b.dataset.cat; renderChips(); renderGrid(); });
@@ -661,7 +693,7 @@ $("sheet").addEventListener("click",e=>{
 $("sheet").addEventListener("input",e=>{ if(e.target.id==="bq"){ buyerQuery=e.target.value; const pos=e.target.selectionStart; renderBuyer(); const i=$("bq"); i.focus(); try{ i.setSelectionRange(pos,pos); }catch(_){} } });
 $("paid").addEventListener("input",renderChange);
 $("v-sales").addEventListener("change",e=>{
-  if(e.target.id==="sel"){ salesKey=e.target.value; renderSales(); }
+  if(e.target.id==="sel"){ salesKey=e.target.value; editBrought=false; renderSales(); }
   // 記入者は次から候補に出す
   if(e.target.id==="mm-who"){ const w=e.target.value.trim(); if(w){ S.writers=(S.writers||[]).filter(x=>x!==w); S.writers.unshift(w); S.writers=S.writers.slice(0,15); save(); } }
 });
@@ -669,6 +701,11 @@ $("v-sales").addEventListener("input",e=>{ const f=e.target.dataset.m; if(f&&sal
 $("v-sales").addEventListener("click",e=>{
   const t=e.target;
   if(t.id==="cp-line") copyText("line"); if(t.id==="cp-xls") copyText("xls"); if(t.id==="cp-zan") copyText("zan"); if(t.id==="cp-buyer") copyText("buyer"); if(t.id==="cp-memo") copyText("memo");
+  const bi=t.closest("[data-bqinc]"), bd=t.closest("[data-bqdec]");
+  if(bi||bd){ const y=window.scrollY; changeBrought(salesKey, Number((bi||bd).dataset[bi?"bqinc":"bqdec"]), bi?1:-1); renderSales(); window.scrollTo(0,y); return; }
+  if(t.id==="bq-open"){ editBrought=true; renderSales(); return; }
+  if(t.id==="bq-close"){ editBrought=false; renderSales(); toast("持参数を直しました"); return; }
+  if(t.id==="bq-reset"){ askConfirm("直した持参数を、QR（と前の販売先から足した分）の数に戻しますか？", ()=>{ const b=S.batches[salesKey]; if(b){ delete b.adj; recompute(salesKey); save(); } renderSales(); toast("元に戻しました"); }); return; }
   const wx=t.closest("[data-wx]"), ls=t.closest("[data-loss]"), ld=t.closest("[data-lossdec]");
   if(wx||ls||ld){ const m=memoOf(salesKey);
     if(wx) m.wx = m.wx===wx.dataset.wx ? "" : wx.dataset.wx;
