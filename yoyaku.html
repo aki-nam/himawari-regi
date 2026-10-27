@@ -243,6 +243,8 @@ function collect(){
     const hidden = (f.kind==="mail" && !recvIs(/メール/)) || (f.kind==="line" && !recvIs(/LINE/));
     let v = hidden ? "" : answerOf(f);
     if(f.kind==="msg" && extra.length) v = (v?v+"\n":"") + "【5個以上の数】" + extra.join("、");
+    // どちらの予約から来たか事務所で分かるように、連絡欄の頭に印を付ける
+    if(f.kind==="msg") v = "（らくらく予約）" + (v?"\n"+v:"");
     if(v) ans[f.id]=v; else if(f.required) miss.push(`「${f.title.replace(/^[\s「]+|[」\s]+$/g,"")}」を入れてください`);
     if(f.kind==="mail" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) miss.push("メールアドレスの形を確かめてください");
   });
