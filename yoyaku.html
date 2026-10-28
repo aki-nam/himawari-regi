@@ -282,6 +282,8 @@ function renderDone(ans){
      <div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}</div><div>${cart[b.id]}個</div><div class="amt">${yen(b.price*cart[b.id])}</div></div>`).join("")}</div>
      <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div>
      <p class="note">この画面を残しておくときは、スクリーンショットを撮ってください。明細は、選んだ方法（メール／LINE）でお送りします。</p>
+     ${recvIs(/LINE/)?`<div style="margin-top:10px"><a class="btn primary" href="${LINE_ADD}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">LINEを開いて ひまわりを友だち追加</a>
+       <p class="note" style="margin:6px 0 0">明細をLINEで受け取るには、ひまわりのLINE公式アカウントの友だち登録と、最初のメッセージ（「○○です」など）が必要です。もう友だちの方は、そのままで大丈夫です。</p></div>`:""}
      ${fields.lineNote && recvIs(/LINE/)?`<div class="err"><b>${esc(fields.lineNote.title)}</b><p class="note" style="margin:4px 0 0">${esc(fields.lineNote.help)}</p></div>`:""}
    </div>
    <div class="row" style="margin-top:12px"><button class="btn" type="button" id="b-again">ほかの日も予約する</button></div>`;
