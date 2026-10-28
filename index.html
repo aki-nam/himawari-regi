@@ -137,6 +137,12 @@ textarea{width:100%;min-height:9em}
 .banner .chips{flex-wrap:wrap;overflow:visible}
 .memo .chips button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .memo .loss button.sold{border-color:var(--danger)}
+/* 残り入力（電卓で売った日） */
+.zr{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line)}
+.zb{text-align:left;font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.zb .n{font-weight:700}
+.zv{min-width:2.4em;text-align:center;font-weight:800;font-size:1.25rem}
+.zv.over{color:var(--danger)}
 .lossrow{display:flex;align-items:center;gap:6px;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line)}
 .lossrow .qty button{width:34px;height:34px;font-size:1.1rem}
 </style>
@@ -150,6 +156,7 @@ textarea{width:100%;min-height:9em}
     <nav role="tablist">
       <button id="tab-reg" role="tab" aria-selected="true" data-tab="reg">レジ</button>
       <button id="tab-sales" role="tab" aria-selected="false" data-tab="sales">売上</button>
+      <button id="tab-zan" role="tab" aria-selected="false" data-tab="zan">残り入力</button>
       <button id="tab-menu" role="tab" aria-selected="false" data-tab="menu">設定</button>
     </nav>
     <div id="batchbar"></div>
@@ -159,6 +166,7 @@ textarea{width:100%;min-height:9em}
   <main>
     <section id="v-reg"><div class="grid" id="grid"></div></section>
     <section id="v-sales" hidden></section>
+    <section id="v-zan" hidden></section>
     <section id="v-menu" hidden></section>
   </main>
 </div>
@@ -216,7 +224,7 @@ function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} 
 
 let cart = {};          // 番号 -> 個数
 let pay = "現金", buyer = "", buyerQuery = "";
-let catFilter = "すべて", tab = "reg", pendingConfirm = null, salesKey = null, editBrought = false, placeEdit = false;
+let catFilter = "すべて", tab = "reg", pendingConfirm = null, salesKey = null, editBrought = false, placeEdit = false, zanKey = null;
 
 const $ = id => document.getElementById(id);
 const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
@@ -553,6 +561,67 @@ function memoInner(g){
    <p class="note">書いた所はすぐ残ります。「LINE用にコピー」の文にも、販売メモが入ります。Excel用の1行は、発注_統合_v2 の［販売メモ］の表の A列のいちばん下の空いたセルに貼ってください。</p>`;
 }
 function renderMemo(){ const g=groups().find(x=>x.k===salesKey), el=$("memo"); if(g&&el) el.innerHTML=memoInner(g); }
+
+/* ---------- 残り入力（レジを使わず電卓で売った日）：残ったパンの数とメモだけを報告する ---------- */
+// レジの会計はここでは使わない（さわってしまっても、この報告には入らない）
+function zanOf(k){ S.manual=S.manual||{}; return S.manual[k]=S.manual[k]||{zan:{}}; }
+function zanRows(k){
+  const b=S.batches[k], z=zanOf(k), menu=menuFor(b.date);
+  return b.items.slice().sort((a,c)=>a.no-c.no).map(i=>{ const m=menu.find(x=>x.no===i.no);
+    return {no:i.no, name:m?m.name:"番号"+i.no, price:m?m.price:0, qty:i.qty, zan:z.zan[i.no]||0}; });
+}
+function zanTotals(R){ const t={qty:0,zan:0,sold:0,amt:0}; R.forEach(r=>{ const s=Math.max(0,r.qty-r.zan); t.qty+=r.qty; t.zan+=r.zan; t.sold+=s; t.amt+=s*r.price; }); return t; }
+// 持参数を直した・前の販売先から足した品は、事務所でB列を直す
+function zanFix(k){ const b=S.batches[k], org={}; (b.qr||b.items).forEach(i=>org[i.no]=i.qty); const menu=menuFor(b.date);
+  return b.items.filter(i=>i.qty!==(org[i.no]||0)).map(i=>{ const m=menu.find(x=>x.no===i.no); return {name:m?m.name:"番号"+i.no, from:org[i.no]||0, to:i.qty}; }); }
+function renderZan(){
+  const v=$("v-zan"), K=Object.keys(S.batches||{}).sort().reverse();
+  if(!K.length){ v.innerHTML=`<h2>残り入力（電卓で売った日）</h2><div class="empty">先に、納品明細の「レジ用QR」をスマホのカメラで読んでください。持って行ったパンがここに並びます。</div>`; return; }
+  if(!zanKey || !S.batches[zanKey]) zanKey = S.batch && S.batches[S.batch.key] ? S.batch.key : K[0];
+  const b=S.batches[zanKey], z=zanOf(zanKey), R=zanRows(zanKey), t=zanTotals(R);
+  v.innerHTML = `<h2>残り入力（電卓で売った日）</h2>
+   <p class="note">レジで会計をしないで、電卓で売った日に使います。販売が終わったら、<b>残ったパンのボタンを押して数を入れ</b>、メモ・連絡事項を書いて、LINEで送ります。この画面の報告には、レジの会計は入りません（レジをさわってしまっても大丈夫です）。</p>
+   <label for="z-sel" class="muted">日付・販売先</label>
+   <select id="z-sel">${K.map(k=>`<option value="${esc(k)}" ${k===zanKey?"selected":""}>${jpDate(S.batches[k].date)}　${esc(S.batches[k].place)}</option>`).join("")}</select>
+   <div class="cards" style="margin-top:10px">
+     <div class="card"><div class="k">持参</div><div class="v">${t.qty}個</div></div>
+     <div class="card"><div class="k">残り</div><div class="v">${t.zan}個</div></div>
+     <div class="card"><div class="k">売れた（計算）</div><div class="v">${t.sold}個</div></div>
+     <div class="card"><div class="k">売上（計算）</div><div class="v">${yen(t.amt)}</div></div>
+   </div>
+   <p class="note">パンの名前を押すと、残りが1つふえます。まちがえたら −。</p>
+   <div>${R.map(r=>`<div class="zr"><button type="button" class="zb" data-zinc="${r.no}"><span class="n">${esc(r.name)}</span><span class="note">持参 ${r.qty}</span></button>
+     <div class="qty"><button type="button" data-zdec="${r.no}" aria-label="${esc(r.name)}の残りを1つへらす">−</button><span class="zv${r.zan>r.qty?" over":""}">${r.zan}</span><button type="button" data-zinc="${r.no}" aria-label="${esc(r.name)}の残りを1つふやす">＋</button></div></div>`).join("")}</div>
+   ${R.some(r=>r.zan>r.qty)?`<p class="note" style="color:var(--danger)">持参より残りが多い品があります。数を確かめてください。</p>`:""}
+   <h2>メモ・連絡事項</h2>
+   <div class="memo">
+     <div><label for="z-who">記入者</label><input id="z-who" data-z="who" type="text" list="z-writers" value="${esc(z.who||"")}" autocomplete="off">
+       <datalist id="z-writers">${(S.writers||[]).map(w=>`<option value="${esc(w)}">`).join("")}</datalist></div>
+     <div><label for="z-msg">メモ・連絡事項（お客さまの声・欲しかったパン・次回のことなど）</label><textarea id="z-msg" data-z="msg">${esc(z.msg||"")}</textarea></div>
+   </div>
+   <div class="row" style="margin-top:10px">
+     <button class="btn primary" type="button" id="z-line">LINE用にコピー</button>
+     <button class="btn sun" type="button" id="z-zan">販売残をコピー</button>
+   </div>
+   <p class="note">送る順番：【LINE用にコピー】→ LINEに貼って送る →【販売残をコピー】→ LINEに貼って送る。事務所では、今までと同じく発注_統合_v2 の［販売実績入力］でこの日を呼び出し、C6 に販売残を貼ります。</p>
+   <textarea id="z-area" hidden readonly aria-label="コピーする文"></textarea>
+   <div id="z-cf"></div>
+   <div class="row" style="margin-top:14px"><button class="btn danger" type="button" id="z-reset">残りの数を全部0に戻す</button></div>`;
+}
+function zanCopy(kind){
+  if(!zanKey || !S.batches[zanKey]) return; const b=S.batches[zanKey], z=zanOf(zanKey), R=zanRows(zanKey), t=zanTotals(R); let txt;
+  if(kind==="line"){
+    txt = `【${jpDate(b.date)} ${b.place} 販売の報告（電卓で販売）】\n` + (z.who?`記入者：${z.who}\n`:"") +
+      `持参 ${t.qty}個　売れた ${t.sold}個　残り ${t.zan}個\n売上（計算）${yen(t.amt)}\n` + (b.carry?`※ ${b.carry.from} の残りを足して販売\n`:"") + "\n" +
+      R.map(r=>`・${r.name}　持参${r.qty}・残り${r.zan}`).join("\n");
+    const fx=zanFix(zanKey); if(fx.length) txt += "\n\n【事務所へ】販売残を貼る前に、B列（持参数）を直す品\n" + fx.map(x=>`・${x.name}　${x.from} → ${x.to}`).join("\n");
+    if(z.msg) txt += "\n\n【メモ・連絡】\n" + z.msg;
+  } else {
+    // 販売実績入力の並び（その月のメニューの番号順・全品）。残りの数だけ、持参なしは 0
+    const by={}; R.forEach(r=>by[r.no]=r.zan); txt = menuFor(b.date).map(m=>by[m.no]||0).join("\n");
+  }
+  putClip(txt, $("z-area"));
+}
 function renderSales(){
   const v=$("v-sales"); const G=groups();
   if(!G.length){ v.innerHTML=`<h2>売上</h2><div class="empty">まだ会計がありません。「レジ」でパンのボタンを押して「会計へ」→「会計する」と、ここに品ごとの売上が集まります。</div>`; return; }
@@ -640,7 +709,7 @@ function putClip(txt, ta){
   try{ navigator.clipboard.writeText(txt).then(()=>toast("コピーしました"),fallback); }catch(e){ fallback(); }
 }
 function askConfirm(msg, onYes){
-  const slot=$(tab==="sales"?"cf-slot":"m-cf"); if(!slot) return; pendingConfirm=onYes;
+  const slot=$(tab==="sales"?"cf-slot":(tab==="zan"?"z-cf":"m-cf")); if(!slot) return; pendingConfirm=onYes;
   slot.innerHTML=`<div class="confirm" style="margin-top:10px"><div>${msg}</div><div class="row"><button class="btn" type="button" data-cf="no">やめる</button><button class="btn danger" type="button" data-cf="yes">はい</button></div></div>`;
   slot.scrollIntoView({block:"center"});
 }
@@ -705,8 +774,8 @@ function pruneNewNames(){
 function show(t){
   tab=t;
   document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===t));
-  $("v-reg").hidden=t!=="reg"; $("v-sales").hidden=t!=="sales"; $("v-menu").hidden=t!=="menu";
-  if(t==="sales") renderSales(); if(t==="menu") renderMenu(); if(t==="reg") renderGrid();
+  $("v-reg").hidden=t!=="reg"; $("v-sales").hidden=t!=="sales"; $("v-zan").hidden=t!=="zan"; $("v-menu").hidden=t!=="menu";
+  if(t==="sales") renderSales(); if(t==="zan") renderZan(); if(t==="menu") renderMenu(); if(t==="reg") renderGrid();
   renderBatchBar(); renderChips(); renderBar(); window.scrollTo(0,0);
 }
 
@@ -764,7 +833,21 @@ $("v-sales").addEventListener("click",e=>{
     if(ld){ m.loss=m.loss||{}; m.loss[ld.dataset.lossdec]=Math.max(0,(m.loss[ld.dataset.lossdec]||0)-1); }
     save(); renderMemo(); return; }
   const u=t.closest("[data-undo]"); if(u) askConfirm("この会計を取り消しますか？", ()=>{ S.sales=S.sales.filter(s=>s.id!==u.dataset.undo); save(); renderSales(); toast("取り消しました"); });
-  if(t.id==="del-group") askConfirm("この日・この販売先の記録を全部消します。先にコピーしましたか？", ()=>{ const k=salesKey; S.sales=S.sales.filter(s=>groupKeyOf(s)!==k); const db=S.batches[k]; if(db&&db.carry&&S.batches[db.carry.fromKey]) delete S.batches[db.carry.fromKey].carriedTo; Object.values(S.batches).forEach(b=>{ if(b.carriedTo===k) delete b.carriedTo; }); delete S.batches[k]; if(S.notes) delete S.notes[k]; if(S.batch&&S.batch.key===k) S.batch=null; salesKey=null; save(); renderSales(); toast("記録を消しました"); });
+  if(t.id==="del-group") askConfirm("この日・この販売先の記録を全部消します。先にコピーしましたか？", ()=>{ const k=salesKey; S.sales=S.sales.filter(s=>groupKeyOf(s)!==k); const db=S.batches[k]; if(db&&db.carry&&S.batches[db.carry.fromKey]) delete S.batches[db.carry.fromKey].carriedTo; Object.values(S.batches).forEach(b=>{ if(b.carriedTo===k) delete b.carriedTo; }); delete S.batches[k]; if(S.notes) delete S.notes[k]; if(S.manual) delete S.manual[k]; if(S.batch&&S.batch.key===k) S.batch=null; salesKey=null; save(); renderSales(); toast("記録を消しました"); });
+  const cf=t.closest("[data-cf]"); if(cf){ const fn=pendingConfirm; pendingConfirm=null; t.closest(".confirm").remove(); if(cf.dataset.cf==="yes"&&fn) fn(); }
+});
+$("v-zan").addEventListener("change",e=>{
+  if(e.target.id==="z-sel"){ zanKey=e.target.value; renderZan(); }
+  if(e.target.id==="z-who"){ const w=e.target.value.trim(); if(w){ S.writers=(S.writers||[]).filter(x=>x!==w); S.writers.unshift(w); S.writers=S.writers.slice(0,15); save(); } }
+});
+$("v-zan").addEventListener("input",e=>{ const f=e.target.dataset.z; if(f&&zanKey){ zanOf(zanKey)[f]=e.target.value.trim(); save(); } });
+$("v-zan").addEventListener("click",e=>{
+  const t=e.target;
+  const zi=t.closest("[data-zinc]"), zd=t.closest("[data-zdec]");
+  if(zi||zd){ const z=zanOf(zanKey), no=(zi||zd).dataset[zi?"zinc":"zdec"], y=window.scrollY;
+    z.zan[no]=Math.max(0,(z.zan[no]||0)+(zi?1:-1)); if(!z.zan[no]) delete z.zan[no]; save(); renderZan(); window.scrollTo(0,y); return; }
+  if(t.id==="z-line") zanCopy("line"); if(t.id==="z-zan") zanCopy("zan");
+  if(t.id==="z-reset") askConfirm("この日・この販売先の残りの数を、全部0に戻しますか？（メモはそのまま）", ()=>{ zanOf(zanKey).zan={}; save(); renderZan(); toast("0に戻しました"); });
   const cf=t.closest("[data-cf]"); if(cf){ const fn=pendingConfirm; pendingConfirm=null; t.closest(".confirm").remove(); if(cf.dataset.cf==="yes"&&fn) fn(); }
 });
 function menuRowName(no){ const m=item(no); return m?m.name:null; }
