@@ -98,6 +98,8 @@ const API = "https://script.google.com/macros/s/AKfycbwe43NaC-74opct2oFcT_eYghWV
 const FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSeJ2d926GBPr4JCRqLnx4GRdXY5N-hNS1gOYldx6XKidnkBzg/viewform";
 // LINE公式アカウントの友だち追加（HPの「LINEで予約する」と同じアドレス）
 const LINE_ADD = "https://lin.ee/o9oA0UH";
+// LINE の中（リッチメニューなど）で開いたときは、もう友だちなので友だち追加のボタンは出さない
+const IN_LINE = /\bLine\//i.test(navigator.userAgent);
 const KEY = "himawari-yoyaku-v1";   // このスマホに覚えること（お届け先・お名前など）
 const CATS = ["菓子パン","惣菜パン","サンド・パイ・他"];
 
@@ -209,7 +211,7 @@ function optField(f){
       ${f.other?`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="__other" ${v==="__other"?"checked":""}><span>その他</span></label>`:""}</div>
       ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="ここに書いてください" style="margin-top:6px" aria-label="${title}（その他）">`:""}
       ${f.kind==="recv"?`<p class="note" style="margin:6px 0 0">※ LINEで明細を受け取れるのは、ひまわりのLINE公式アカウントに<b>友だち登録している方だけ</b>です。登録していない方は「メール」を選んでください。</p>
-        ${/LINE/.test(v)?`<a class="btn" href="${LINE_ADD}" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;text-decoration:none">LINEで友だち追加する（まだの方）</a>`:""}`:""}</div>`;
+        ${/LINE/.test(v) && !IN_LINE?`<a class="btn" href="${LINE_ADD}" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;text-decoration:none">LINEで友だち追加する（まだの方）</a>`:""}`:""}</div>`;
   if(f.type==="LIST") return `<div><label class="q" for="f-${f.id}">${title}${req}</label>
       <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${(f.choices||[]).map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}</select>
       ${f.help?`<p class="note" style="margin:4px 0 0">${esc(f.help)}</p>`:""}</div>`;
@@ -282,7 +284,7 @@ function renderDone(ans){
      <div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}</div><div>${cart[b.id]}個</div><div class="amt">${yen(b.price*cart[b.id])}</div></div>`).join("")}</div>
      <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div>
      <p class="note">この画面を残しておくときは、スクリーンショットを撮ってください。明細は、選んだ方法（メール／LINE）でお送りします。</p>
-     ${recvIs(/LINE/)?`<div style="margin-top:10px"><a class="btn primary" href="${LINE_ADD}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">LINEを開いて ひまわりを友だち追加</a>
+     ${recvIs(/LINE/) && !IN_LINE?`<div style="margin-top:10px"><a class="btn primary" href="${LINE_ADD}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">LINEを開いて ひまわりを友だち追加</a>
        <p class="note" style="margin:6px 0 0">明細をLINEで受け取るには、ひまわりのLINE公式アカウントの友だち登録と、最初のメッセージ（「○○です」など）が必要です。もう友だちの方は、そのままで大丈夫です。</p></div>`:""}
      ${fields.lineNote && recvIs(/LINE/)?`<div class="err"><b>${esc(fields.lineNote.title)}</b><p class="note" style="margin:4px 0 0">${esc(fields.lineNote.help)}</p></div>`:""}
    </div>
