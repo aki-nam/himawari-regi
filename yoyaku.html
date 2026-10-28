@@ -96,6 +96,8 @@ textarea{min-height:5.5em}
 const API = "https://script.google.com/macros/s/AKfycbwe43NaC-74opct2oFcT_eYghWVA6nsGdyosm4Av-7s6cR_Odaj2bOSpHBjZf5SbeaF/exec";
 // うまくいかないときのGoogleフォーム
 const FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSeJ2d926GBPr4JCRqLnx4GRdXY5N-hNS1gOYldx6XKidnkBzg/viewform";
+// LINE公式アカウントの友だち追加（ベーシックID @461wlqmx）
+const LINE_ADD = "https://line.me/R/ti/p/@461wlqmx";
 const KEY = "himawari-yoyaku-v1";   // このスマホに覚えること（お届け先・お名前など）
 const CATS = ["菓子パン","惣菜パン","サンド・パイ・他"];
 
@@ -206,7 +208,8 @@ function optField(f){
       <div class="opt" role="radiogroup" aria-label="${title}">${(f.choices||[]).map(c=>`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="${esc(c)}" ${c===v?"checked":""}><span>${esc(c)}</span></label>`).join("")}
       ${f.other?`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="__other" ${v==="__other"?"checked":""}><span>その他</span></label>`:""}</div>
       ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="ここに書いてください" style="margin-top:6px" aria-label="${title}（その他）">`:""}
-      ${f.kind==="recv"?`<p class="note" style="margin:6px 0 0">※ LINEで明細を受け取れるのは、ひまわりのLINE公式アカウントに<b>友だち登録している方だけ</b>です。登録していない方は「メール」を選んでください。</p>`:""}</div>`;
+      ${f.kind==="recv"?`<p class="note" style="margin:6px 0 0">※ LINEで明細を受け取れるのは、ひまわりのLINE公式アカウントに<b>友だち登録している方だけ</b>です。登録していない方は「メール」を選んでください。</p>
+        ${/LINE/.test(v)?`<a class="btn" href="${LINE_ADD}" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;text-decoration:none">LINEで友だち追加する（まだの方）</a>`:""}`:""}</div>`;
   if(f.type==="LIST") return `<div><label class="q" for="f-${f.id}">${title}${req}</label>
       <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${(f.choices||[]).map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}</select>
       ${f.help?`<p class="note" style="margin:4px 0 0">${esc(f.help)}</p>`:""}</div>`;
