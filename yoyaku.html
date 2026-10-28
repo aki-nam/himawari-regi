@@ -205,7 +205,8 @@ function optField(f){
       ${f.help?`<p class="note" style="margin:2px 0 6px">${esc(f.help)}</p>`:""}
       <div class="opt" role="radiogroup" aria-label="${title}">${(f.choices||[]).map(c=>`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="${esc(c)}" ${c===v?"checked":""}><span>${esc(c)}</span></label>`).join("")}
       ${f.other?`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="__other" ${v==="__other"?"checked":""}><span>その他</span></label>`:""}</div>
-      ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="ここに書いてください" style="margin-top:6px" aria-label="${title}（その他）">`:""}</div>`;
+      ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="ここに書いてください" style="margin-top:6px" aria-label="${title}（その他）">`:""}
+      ${f.kind==="recv"?`<p class="note" style="margin:6px 0 0">※ LINEで明細を受け取れるのは、ひまわりのLINE公式アカウントに<b>友だち登録している方だけ</b>です。登録していない方は「メール」を選んでください。</p>`:""}</div>`;
   if(f.type==="LIST") return `<div><label class="q" for="f-${f.id}">${title}${req}</label>
       <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${(f.choices||[]).map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}</select>
       ${f.help?`<p class="note" style="margin:4px 0 0">${esc(f.help)}</p>`:""}</div>`;
