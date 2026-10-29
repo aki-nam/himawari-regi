@@ -227,7 +227,7 @@ function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} 
 
 let cart = {};          // 番号 -> 個数
 let pay = "現金", buyer = "", buyerQuery = "";
-let catFilter = "すべて", tab = "reg", pendingConfirm = null, salesKey = null, editBrought = false, placeEdit = false, zanKey = null;
+let catFilter = "すべて", tab = "reg", pendingConfirm = null, salesKey = null, editBrought = false, placeEdit = false, zanKey = null, zanNext = false;
 
 const $ = id => document.getElementById(id);
 const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
@@ -287,10 +287,14 @@ function remaining(){ if(!S.batch) return null; const sold=soldIn(S.batch.key), 
 
 /* ---------- 前の販売先の残りを足す（同じ日に先に回った販売先の残りを、今の持参に足す） ---------- */
 function mergeItems(a, b){ const m={}; a.concat(b).forEach(i=>{ m[i.no]=(m[i.no]||0)+i.qty; }); return Object.keys(m).map(Number).sort((x,y)=>x-y).map(no=>({no,qty:m[no]})); }
-function restOf(key){ const b=S.batches[key]; if(!b) return []; const sold=soldIn(key); return b.items.map(i=>({no:i.no,qty:i.qty-(sold[i.no]||0)})).filter(i=>i.qty>0); }
+// 電卓で売った販売先（レジの会計が無く、残り入力で残りを数えた／次へ進んだ）は、数えた残りを使う
+function zanMode(k){ const z=S.manual&&S.manual[k]; return !!z && !S.sales.some(s=>s.batchKey===k) && (!!z.done || Object.keys(z.zan||{}).length>0); }
+function restOf(key){ const b=S.batches[key]; if(!b) return [];
+  if(zanMode(key)){ const z=S.manual[key].zan||{}; return b.items.map(i=>({no:i.no,qty:z[i.no]||0})).filter(i=>i.qty>0); }
+  const sold=soldIn(key); return b.items.map(i=>({no:i.no,qty:i.qty-(sold[i.no]||0)})).filter(i=>i.qty>0); }
 function carryCands(){
   if(!S.batch) return []; const cur=S.batches[S.batch.key]; if(!cur || cur.carry) return [];
-  return Object.entries(S.batches).filter(([k,b])=>k!==S.batch.key && b.date===S.batch.date && !b.carriedTo && S.sales.some(s=>s.batchKey===k))
+  return Object.entries(S.batches).filter(([k,b])=>k!==S.batch.key && b.date===S.batch.date && !b.carriedTo && (S.sales.some(s=>s.batchKey===k) || zanMode(k)))
     .map(([k,b])=>{ const rest=restOf(k); return {k, place:b.place, rest, n:rest.reduce((s,i)=>s+i.qty,0)}; }).filter(x=>x.n>0);
 }
 function setBatchItems(key){ if(S.batch && S.batch.key===key) S.batch.items=S.batches[key].items; }
@@ -380,7 +384,7 @@ function goNext(name){
   name=(name||"").trim(); if(!name){ toast("次の販売先の名前を入れてください"); return; }
   const from=S.batch, k=Object.keys(S.batches).find(x=>S.batches[x].date===from.date && norm(S.batches[x].place)===norm(name));
   if(!k || k===from.key){ setPlace(k ? from.place : name); return; }
-  const b=S.batches[k], hadSales=S.sales.some(s=>s.batchKey===from.key);
+  const b=S.batches[k], hadSales=S.sales.some(s=>s.batchKey===from.key) || zanMode(from.key);
   S.batch={key:k, date:from.date, place:b.place, items:b.items}; S.place=b.place; S.via=null; S.mode="batch";
   let msg=b.place+" で売ります（QRの持参分）";
   if(hadSales){ const c=carryCands().find(x=>x.k===from.key); if(c){ addCarry(from.key, true); msg+="。"+from.place+" の残り "+c.n+"個も足しました"; } }
@@ -537,7 +541,7 @@ function changeBrought(key, no, d){
   recompute(key); save();
 }
 // 発注_統合_v2 の B列（持参数）を直す品：前の販売先から足した品・直した品・持参より多く売れた品
-function fixList(g, sm){ return g.batch ? sm.rows.filter(r=>r.brought!=null||r.qty).map(r=>({r, to:Math.max(r.brought||0, r.all??r.qty)})).filter(x=>x.to!==(x.r.org||0)) : []; }
+function fixList(g, sm){ return g.batch && !g.batch.noqr ?sm.rows.filter(r=>r.brought!=null||r.qty).map(r=>({r, to:Math.max(r.brought||0, r.all??r.qty)})).filter(x=>x.to!==(x.r.org||0)) : []; }
 function buyersOf(g){
   const b={}; g.list.forEach(s=>{ const n=s.buyer||"（名前なし）"; const o=b[n]=b[n]||{n,times:0,pieces:0,amt:0,items:{}}; o.times++; o.amt+=s.total; s.items.forEach(i=>{ o.pieces+=i.qty; o.items[i.name]=(o.items[i.name]||0)+i.qty; }); });
   return Object.values(b).sort((a,b)=>b.amt-a.amt);
@@ -608,8 +612,38 @@ function zanRows(k){
 }
 function zanTotals(R){ const t={qty:0,zan:0,sold:0,amt:0}; R.forEach(r=>{ const s=Math.max(0,r.qty-r.zan); t.qty+=r.qty; t.zan+=r.zan; t.sold+=s; t.amt+=s*r.price; }); return t; }
 // 持参数を直した・前の販売先から足した品は、事務所でB列を直す
-function zanFix(k){ const b=S.batches[k], org={}; (b.qr||b.items).forEach(i=>org[i.no]=i.qty); const menu=menuFor(b.date);
+function zanFix(k){ const b=S.batches[k], org={}; if(b.noqr) return []; (b.qr||b.items).forEach(i=>org[i.no]=i.qty); const menu=menuFor(b.date);
   return b.items.filter(i=>i.qty!==(org[i.no]||0)).map(i=>{ const m=menu.find(x=>x.no===i.no); return {name:m?m.name:"番号"+i.no, from:org[i.no]||0, to:i.qty}; }); }
+// QRなしの販売先へ続けて回ったときの、最後の販売先（QRの販売先の販売残は、そこで最後に残った数）
+function zanEnd(k){ let e=k, n=0; while(n++<20 && S.batches[e] && S.batches[e].carriedTo && S.batches[S.batches[e].carriedTo] && S.batches[S.batches[e].carriedTo].noqr) e=S.batches[e].carriedTo; return e; }
+// 電卓の日：残りを数えたら、その残りを持って次の販売先へ（QRの販売先ならそのQRのパンに足す。QRが無ければ残りだけで売る）
+function zanNextPanel(){
+  const b=S.batches[zanKey], qrs=Object.values(S.batches).filter(x=>x.date===b.date).map(x=>x.place), cands=qrs.slice();
+  Object.keys(S.roster||{}).forEach(c=>cands.push(c)); S.sales.slice(-200).reverse().forEach(s=>cands.push(s.place));
+  const seen=new Set([norm(b.place)]), list=cands.filter(p=>p && !seen.has(norm(p)) && seen.add(norm(p))).slice(0,30);
+  return `<div class="carry next" style="margin-top:10px">
+    <label for="znp"><b>次の販売先</b>（今の残り ${restOf(zanKey).reduce((s,i)=>s+i.qty,0)}個を持って行きます）</label>
+    <input id="znp" type="text" placeholder="販売先の名前（下から選んでもOK）" autocomplete="off" style="font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)">
+    <span class="chips" style="flex-wrap:wrap;overflow:visible;padding:0">${list.map(p=>`<button type="button" data-znp="${esc(p)}">${esc(p)}${qrs.some(q=>norm(q)===norm(p))?"（QR）":""}</button>`).join("")}</span>
+    <span class="row"><button class="btn" type="button" data-znpcancel="1">やめる</button><button class="btn primary" type="button" data-znpok="1">次の販売先へ</button></span></div>`;
+}
+function zanGoNext(name){
+  name=(name||"").trim(); if(!name){ toast("次の販売先の名前を入れてください"); return; }
+  const from=zanKey, fb=S.batches[from], date=fb.date;
+  let k=Object.keys(S.batches).find(x=>S.batches[x].date===date && norm(S.batches[x].place)===norm(name));
+  if(k===from){ toast("今の販売先です"); return; }
+  zanOf(from).done=true;
+  // 前に別の販売先へ足していたら、そちらから外す
+  if(fb.carriedTo && fb.carriedTo!==k && S.batches[fb.carriedTo]){ const o=S.batches[fb.carriedTo]; delete o.carry; recompute(fb.carriedTo); delete fb.carriedTo; }
+  if(!k){ k=date+"|"+name; S.batches[k]={date, place:name, items:[], qr:[], noqr:true}; }
+  const b=S.batches[k], rest=restOf(from), n=rest.reduce((s,i)=>s+i.qty,0);
+  let msg=b.place+" へ。";
+  if(b.carry && b.carry.fromKey!==from) msg+=b.carry.from+" の残りがもう足してあるので、今の残りは足していません";
+  else if(n){ b.carry={fromKey:from, from:fb.place, items:rest}; fb.carriedTo=k; recompute(k); msg+=fb.place+" の残り "+n+"個を持って行きます"; }
+  else msg+="残りはありません";
+  S.batch={key:k, date, place:b.place, items:b.items}; S.place=b.place; S.via=null; S.mode="batch"; $("place").value=S.place;
+  zanKey=k; zanNext=false; save(); renderZan(); window.scrollTo(0,0); toast(msg);
+}
 function renderZan(){
   const v=$("v-zan"), K=Object.keys(S.batches||{}).sort().reverse();
   if(!K.length){ v.innerHTML=`<h2>残り入力（電卓で売った日）</h2><div class="empty">先に、納品明細の「レジ用QR」をスマホのカメラで読んでください。持って行ったパンがここに並びます。</div>`; return; }
@@ -618,7 +652,8 @@ function renderZan(){
   v.innerHTML = `<h2>残り入力（電卓で売った日）</h2>
    <p class="note">レジで会計をしないで、電卓で売った日に使います。販売が終わったら、<b>残ったパンのボタンを押して数を入れ</b>、メモ・連絡事項を書いて、LINEで送ります。この画面の報告には、レジの会計は入りません（レジをさわってしまっても大丈夫です）。</p>
    <label for="z-sel" class="muted">日付・販売先</label>
-   <select id="z-sel">${K.map(k=>`<option value="${esc(k)}" ${k===zanKey?"selected":""}>${jpDate(S.batches[k].date)}　${esc(S.batches[k].place)}</option>`).join("")}</select>
+   <select id="z-sel">${K.map(k=>`<option value="${esc(k)}" ${k===zanKey?"selected":""}>${jpDate(S.batches[k].date)}　${esc(S.batches[k].place)}${S.batches[k].noqr?"（QRなし）":""}</option>`).join("")}</select>
+   ${b.carry?`<p class="note">＋ ${esc(b.carry.from)} の残り ${b.carry.items.reduce((s,i)=>s+i.qty,0)}個を持参に入れています。</p>`:""}
    <div class="cards" style="margin-top:10px">
      <div class="card"><div class="k">持参</div><div class="v">${t.qty}個</div></div>
      <div class="card"><div class="k">残り</div><div class="v">${t.zan}個</div></div>
@@ -637,9 +672,12 @@ function renderZan(){
    </div>
    <div class="row" style="margin-top:10px">
      <button class="btn primary" type="button" id="z-line">LINE用にコピー</button>
-     <button class="btn sun" type="button" id="z-zan">販売残をコピー</button>
+     ${b.noqr?"":`<button class="btn sun" type="button" id="z-zan">販売残をコピー</button>`}
    </div>
-   <p class="note">送る順番：【LINE用にコピー】→ LINEに貼って送る →【販売残をコピー】→ LINEに貼って送る。事務所では、今までと同じく発注_統合_v2 の［販売実績入力］でこの日を呼び出し、C6 に販売残を貼ります。</p>
+   ${b.noqr?`<p class="note">QRの無い販売先なので、販売残はありません（${esc(b.carry?b.carry.from:"前の販売先")} の【販売残をコピー】に、ここで最後に残った数が入ります）。</p>`
+     :`<p class="note">送る順番：【LINE用にコピー】→ LINEに貼って送る →【販売残をコピー】→ LINEに貼って送る。事務所では、今までと同じく発注_統合_v2 の［販売実績入力］でこの日を呼び出し、C6 に販売残を貼ります。${zanEnd(zanKey)!==zanKey?`<br><b>販売残は、QRなしで回った ${esc(S.batches[zanEnd(zanKey)].place)} で最後に残った数</b>になります。`:""}</p>`}
+   <div class="row" style="margin-top:10px"><button class="btn sun" type="button" id="z-next">残りを持って次の販売先へ</button></div>
+   ${zanNext?zanNextPanel():`<p class="note">続けて次の販売先で売るときは、残りを数えて【LINE用にコピー】で送ってから押してください。会社にもどってから、販売先ごとに【販売残をコピー】を送ってもかまいません。</p>`}
    <textarea id="z-area" hidden readonly aria-label="コピーする文"></textarea>
    <div id="z-cf"></div>
    <div class="row" style="margin-top:14px"><button class="btn danger" type="button" id="z-reset">残りの数を全部0に戻す</button></div>`;
@@ -647,14 +685,17 @@ function renderZan(){
 function zanCopy(kind){
   if(!zanKey || !S.batches[zanKey]) return; const b=S.batches[zanKey], z=zanOf(zanKey), R=zanRows(zanKey), t=zanTotals(R); let txt;
   if(kind==="line"){
-    txt = `【${jpDate(b.date)} ${b.place} 販売の報告（電卓で販売）】\n` + (z.who?`記入者：${z.who}\n`:"") +
+    txt = `【${jpDate(b.date)} ${b.place} 販売の報告（電卓で販売${b.noqr?"・QRなし":""}）】\n` + (z.who?`記入者：${z.who}\n`:"") +
       `持参 ${t.qty}個　売れた ${t.sold}個　残り ${t.zan}個\n売上（計算）${yen(t.amt)}\n` + (b.carry?`※ ${b.carry.from} の残りを足して販売\n`:"") + "\n" +
       R.map(r=>`・${r.name}　持参${r.qty}・残り${r.zan}`).join("\n");
     const fx=zanFix(zanKey); if(fx.length) txt += "\n\n【事務所へ】販売残を貼る前に、B列（持参数）を直す品\n" + fx.map(x=>`・${x.name}　${x.from} → ${x.to}`).join("\n");
     if(z.msg) txt += "\n\n【メモ・連絡】\n" + z.msg;
   } else {
     // 販売実績入力の並び（その月のメニューの番号順・全品）。残りの数だけ、持参なしは 0
-    const by={}; R.forEach(r=>by[r.no]=r.zan); txt = menuFor(b.date).map(m=>by[m.no]||0).join("\n");
+    // QRなしの販売先へ続けて回ったときは、そこで最後に残った数
+    const by={}, e=zanEnd(zanKey);
+    if(e===zanKey) R.forEach(r=>by[r.no]=r.zan); else restOf(e).forEach(i=>by[i.no]=i.qty);
+    txt = menuFor(b.date).map(m=>by[m.no]||0).join("\n");
   }
   putClip(txt, $("z-area"));
 }
@@ -686,7 +727,7 @@ function renderSales(){
    <div class="row" style="margin-top:10px">
      <button class="btn primary" type="button" id="cp-line">LINE用にコピー</button>
      <button class="btn" type="button" id="cp-xls">Excel用にコピー</button>
-     ${hasB?`<button class="btn sun" type="button" id="cp-zan">販売残をコピー</button>`:""}
+     ${hasB&&!g.batch.noqr?`<button class="btn sun" type="button" id="cp-zan">販売残をコピー</button>`:""}
    </div>
    ${hasB?`<p class="note">「販売残をコピー」は、発注_統合_v2 の［販売実績入力］でこの日を呼び出し、C6（販売残のいちばん上）をクリックして貼り付けると、全部の品の販売残が一度に入ります（売り切れは 0）。数字だけが品の数だけ並びます。</p>`:""}
    ${cfrom?`<p class="note">${esc(cfrom)} の残りを足しています（「持参」に入っています）。</p>`:""}
@@ -874,7 +915,7 @@ $("v-sales").addEventListener("click",e=>{
   const cf=t.closest("[data-cf]"); if(cf){ const fn=pendingConfirm; pendingConfirm=null; t.closest(".confirm").remove(); if(cf.dataset.cf==="yes"&&fn) fn(); }
 });
 $("v-zan").addEventListener("change",e=>{
-  if(e.target.id==="z-sel"){ zanKey=e.target.value; renderZan(); }
+  if(e.target.id==="z-sel"){ zanKey=e.target.value; zanNext=false; renderZan(); }
   if(e.target.id==="z-who"){ const w=e.target.value.trim(); if(w){ S.writers=(S.writers||[]).filter(x=>x!==w); S.writers.unshift(w); S.writers=S.writers.slice(0,15); save(); } }
 });
 $("v-zan").addEventListener("input",e=>{ const f=e.target.dataset.z; if(f&&zanKey){ zanOf(zanKey)[f]=e.target.value.trim(); save(); } });
@@ -884,6 +925,10 @@ $("v-zan").addEventListener("click",e=>{
   if(zi||zd){ const z=zanOf(zanKey), no=(zi||zd).dataset[zi?"zinc":"zdec"], y=window.scrollY;
     z.zan[no]=Math.max(0,(z.zan[no]||0)+(zi?1:-1)); if(!z.zan[no]) delete z.zan[no]; save(); renderZan(); window.scrollTo(0,y); return; }
   if(t.id==="z-line") zanCopy("line"); if(t.id==="z-zan") zanCopy("zan");
+  if(t.id==="z-next"){ zanNext=!zanNext; renderZan(); const i=$("znp"); if(i) i.scrollIntoView({block:"center"}); return; }
+  const zp=t.closest("[data-znp]"); if(zp){ zanGoNext(zp.dataset.znp); return; }
+  if(t.closest("[data-znpok]")){ zanGoNext(($("znp")||{}).value); return; }
+  if(t.closest("[data-znpcancel]")){ zanNext=false; renderZan(); return; }
   if(t.id==="z-reset") askConfirm("この日・この販売先の残りの数を、全部0に戻しますか？（メモはそのまま）", ()=>{ zanOf(zanKey).zan={}; save(); renderZan(); toast("0に戻しました"); });
   const cf=t.closest("[data-cf]"); if(cf){ const fn=pendingConfirm; pendingConfirm=null; t.closest(".confirm").remove(); if(cf.dataset.cf==="yes"&&fn) fn(); }
 });
