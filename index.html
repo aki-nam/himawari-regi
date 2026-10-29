@@ -113,6 +113,9 @@ textarea{width:100%;min-height:9em}
 .banner b{font-family:var(--f-display)}
 .banner .note{margin:0}
 .carry{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.carry.next{flex-direction:column;align-items:stretch;gap:6px;background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--accent);border-radius:12px;padding:10px 12px}
+.carry.next .note{margin:0}
+.banner .chips button.nextbtn{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:700}
 .carry button{font:inherit;font-size:.9rem;padding:6px 12px;border-radius:999px;border:1px solid var(--sun);background:var(--surface);color:var(--fg);cursor:pointer}
 .carry .on{font-size:.9rem;font-weight:700}
 .fix{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--danger);border-radius:12px;padding:8px 12px;margin-top:10px}
@@ -287,7 +290,7 @@ function mergeItems(a, b){ const m={}; a.concat(b).forEach(i=>{ m[i.no]=(m[i.no]
 function restOf(key){ const b=S.batches[key]; if(!b) return []; const sold=soldIn(key); return b.items.map(i=>({no:i.no,qty:i.qty-(sold[i.no]||0)})).filter(i=>i.qty>0); }
 function carryCands(){
   if(!S.batch) return []; const cur=S.batches[S.batch.key]; if(!cur || cur.carry) return [];
-  return Object.entries(S.batches).filter(([k,b])=>k!==S.batch.key && b.date===S.batch.date && !b.carriedTo)
+  return Object.entries(S.batches).filter(([k,b])=>k!==S.batch.key && b.date===S.batch.date && !b.carriedTo && S.sales.some(s=>s.batchKey===k))
     .map(([k,b])=>{ const rest=restOf(k); return {k, place:b.place, rest, n:rest.reduce((s,i)=>s+i.qty,0)}; }).filter(x=>x.n>0);
 }
 function setBatchItems(key){ if(S.batch && S.batch.key===key) S.batch.items=S.batches[key].items; }
@@ -307,9 +310,10 @@ function addCarry(fromKey, quiet){
   if(!quiet) toast(c.place+" の残り "+c.n+"個を持参に足しました");
 }
 // いちばん最近まで売っていた販売先の残りを足す。足したら案内の文を返す
+// （朝にQRをまとめて読んだときに、まだ売っていない販売先のパンを足さないよう、会計のある販売先だけ）
 function autoCarry(){
-  const C=carryCands(); if(!C.length) return "";
   const lastTs=k=>S.sales.filter(s=>s.batchKey===k).reduce((m,s)=>Math.max(m,s.ts),0);
+  const C=carryCands().filter(c=>lastTs(c.k)>0); if(!C.length) return "";
   C.sort((a,b)=>lastTs(b.k)-lastTs(a.k)); const c=C[0];
   addCarry(c.k, true); return "。"+c.place+" の残り "+c.n+"個も足しました（持ち帰るときは【足した分を外す】）";
 }
@@ -330,25 +334,57 @@ function renderBatchBar(){
   if(tab!=="reg" || !S.batch){ b.innerHTML = (tab==="reg") ? `<div class="banner"><span class="note">納品明細の「レジ用QR」をスマホのカメラで読むと、その日に持って行ったパンだけが並び、残りの数が出ます。</span></div>` : ""; return; }
   const n = S.batch.items.reduce((s,i)=>s+i.qty,0), sub = curKey()!==S.batch.key;
   b.innerHTML = `<div class="banner"><span>${sub?`今の販売先 <b>${esc(S.place.trim())}</b>（${esc(S.batch.place)} のQRのパンで販売中）`:`<b>${jpDate(S.batch.date)}　${esc(S.batch.place)}</b>　持参 ${S.batch.items.length}品・${n}個`}</span>
-    <span class="chips" style="padding:0"><button type="button" data-mode="batch" aria-pressed="${S.mode==="batch"}">持参分だけ</button><button type="button" data-mode="all" aria-pressed="${S.mode!=="batch"}">全部のパン</button><button type="button" data-goplace="1">販売先を変える</button><button type="button" data-gomemo="1">販売メモ</button><button type="button" data-gobq="1">持参数を直す</button></span></div>`;
+    <span class="chips" style="padding:0"><button type="button" data-mode="batch" aria-pressed="${S.mode==="batch"}">持参分だけ</button><button type="button" data-mode="all" aria-pressed="${S.mode!=="batch"}">全部のパン</button><button type="button" data-goplace="1" class="nextbtn">ここを終わる・次の販売先へ</button><button type="button" data-gomemo="1">販売メモ</button><button type="button" data-gobq="1">持参数を直す</button></span></div>`;
   if(placeEdit) b.innerHTML += placePanel();
   const cur=S.batches[S.batch.key], C=carryCands();
   if(cur && cur.carry){ const n=cur.carry.items.reduce((s,i)=>s+i.qty,0);
     b.innerHTML += `<div class="carry"><span class="on">＋ ${esc(cur.carry.from)} の残り ${n}個を足しています</span><button type="button" data-uncarry="1">足した分を外す</button></div>`; }
   else if(C.length) b.innerHTML += `<div class="carry">${C.map(c=>`<button type="button" data-carry="${esc(c.k)}">＋ ${esc(c.place)} の残り ${c.n}個を足す</button>`).join("")}</div>`;
 }
-// 【販売先を変える】：QRの無い販売先で、QRのパンを続けて売る（売上・お名前・販売メモはその販売先として別に残る）
+// 【ここを終わる・次の販売先へ】：① ここの売上と残りをLINEへ → ② 次の販売先を選ぶと、残ったパンを持ったまま次で売る
+// （売上・お名前・販売メモは販売先ごとに別に残る。販売残とメモは、会社にもどってから「売上」でゆっくり送る）
+function hereName(){ return (S.place||"").trim() || S.batch.place; }
 function placePanel(){
-  const cands=[S.batch.place];
-  S.sales.filter(s=>s.batchKey===S.batch.key).forEach(s=>cands.push(s.place));
+  const here=hereName(), g=groups().find(x=>x.k===curKey()), n=g?g.list.length:0;
+  const qrs=Object.values(S.batches).filter(b=>b.date===S.batch.date).map(b=>b.place);
+  const cands=qrs.slice();
   Object.keys(S.roster||{}).forEach(c=>cands.push(c));
-  S.sales.slice(-200).forEach(s=>cands.push(s.place));
-  const seen=new Set(), list=cands.filter(p=>p && !seen.has(norm(p)) && seen.add(norm(p))).slice(0,30);
-  return `<div class="carry" style="flex-direction:column;align-items:stretch">
-    <label for="np" class="muted">次に売る販売先（QRが無い所）</label>
-    <input id="np" type="text" placeholder="販売先の名前" autocomplete="off" style="font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)">
-    <span class="chips" style="flex-wrap:wrap;overflow:visible;padding:0">${list.map(p=>`<button type="button" data-np="${esc(p)}">${esc(p)}${norm(p)===norm(S.batch.place)?"（QR）":""}</button>`).join("")}</span>
-    <span class="row"><button class="btn" type="button" data-npcancel="1">やめる</button><button class="btn primary" type="button" data-npok="1">この販売先で売る</button></span></div>`;
+  S.sales.slice(-200).reverse().forEach(s=>cands.push(s.place));
+  const seen=new Set([norm(here)]), list=cands.filter(p=>p && !seen.has(norm(p)) && seen.add(norm(p))).slice(0,30);
+  const isQR=p=>qrs.some(q=>norm(q)===norm(p));
+  return `<div class="carry next">
+    <b>① ${esc(here)} の報告（会計 ${n}件）</b>
+    <button class="btn primary" type="button" data-stoprep="1">ここの売上と残りをコピー</button>
+    <span class="note">コピーしたら、LINEに貼って送ってください。記録はこのスマホに残っています。</span>
+    <textarea id="np-area" hidden readonly aria-label="コピーする文"></textarea>
+    <label for="np"><b>② 次の販売先</b></label>
+    <input id="np" type="text" placeholder="販売先の名前（下から選んでもOK）" autocomplete="off" style="font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)">
+    <span class="chips" style="flex-wrap:wrap;overflow:visible;padding:0">${list.map(p=>`<button type="button" data-np="${esc(p)}">${esc(p)}${isQR(p)?"（QR）":""}</button>`).join("")}</span>
+    <span class="note">残ったパンは、そのまま次の販売先で売れます。「（QR）」の販売先は、そのQRのパンに残りを足して並べます。</span>
+    <span class="row"><button class="btn" type="button" data-npcancel="1">やめる</button><button class="btn primary" type="button" data-npok="1">次の販売先で売る</button></span></div>`;
+}
+// 途中の報告：ここで売れたパンと、今持っている残り
+function stopText(){
+  const here=hereName(), g=groups().find(x=>x.k===curKey()), list=g?g.list:[], menu=menuFor(S.batch.date);
+  const nm=no=>{ const m=menu.find(x=>x.no===no); return m?m.name:"番号"+no; };
+  const sold={}; let cash=0, pp=0, pcs=0;
+  list.forEach(s=>{ s.items.forEach(i=>{ sold[i.no]=(sold[i.no]||0)+i.qty; pcs+=i.qty; }); if(s.pay==="PayPay") pp+=s.total; else cash+=s.total; });
+  const all=soldIn(S.batch.key), rest=S.batch.items.map(i=>({no:i.no, q:i.qty-(all[i.no]||0)})).filter(x=>x.q>0);
+  const rn=rest.reduce((s,x)=>s+x.q,0);
+  return `【${jpDate(S.batch.date)} ${here} 販売終了】\nお客さま ${list.length}人　${pcs}個\n合計 ${yen(cash+pp)}（現金 ${yen(cash)}／PayPay ${yen(pp)}）\n` +
+    Object.keys(sold).map(Number).sort((a,b)=>a-b).map(no=>`・${nm(no)}　${sold[no]}個`).join("\n") +
+    `\n\n【今の残り ${rn}個】\n` + (rn ? rest.map(x=>`・${nm(x.no)}　${x.q}`).join("\n") : "全部売れました");
+}
+// 次の販売先へ。同じ日にQRを読んだ販売先なら、そのQRのパンに今の残りを足す。QRが無ければ、今のパンのまま続けて売る
+function goNext(name){
+  name=(name||"").trim(); if(!name){ toast("次の販売先の名前を入れてください"); return; }
+  const from=S.batch, k=Object.keys(S.batches).find(x=>S.batches[x].date===from.date && norm(S.batches[x].place)===norm(name));
+  if(!k || k===from.key){ setPlace(k ? from.place : name); return; }
+  const b=S.batches[k], hadSales=S.sales.some(s=>s.batchKey===from.key);
+  S.batch={key:k, date:from.date, place:b.place, items:b.items}; S.place=b.place; S.via=null; S.mode="batch";
+  let msg=b.place+" で売ります（QRの持参分）";
+  if(hadSales){ const c=carryCands().find(x=>x.k===from.key); if(c){ addCarry(from.key, true); msg+="。"+from.place+" の残り "+c.n+"個も足しました"; } }
+  save(); $("place").value=S.place; placeEdit=false; cart={}; renderBatchBar(); renderGrid(); renderBar(); toast(msg);
 }
 function setPlace(name){
   name=(name||"").trim(); if(!name){ toast("販売先の名前を入れてください"); return; }
@@ -787,8 +823,9 @@ $("batchbar").addEventListener("click",e=>{
   if(c||u){ if(c) addCarry(c.dataset.carry); else removeCarry(S.batch.key); renderBatchBar(); renderGrid(); return; }
   if(e.target.closest("[data-gobq]")){ salesKey=S.batch.key; editBrought=true; show("sales"); const h=$("bq-close"); if(h) h.closest(".fix").scrollIntoView({block:"start"}); return; }
   if(e.target.closest("[data-goplace]")){ placeEdit=!placeEdit; renderBatchBar(); const i=$("np"); if(i) i.focus(); return; }
-  const np=e.target.closest("[data-np]"); if(np){ setPlace(np.dataset.np); return; }
-  if(e.target.closest("[data-npok]")){ setPlace(($("np")||{}).value); return; }
+  if(e.target.closest("[data-stoprep]")){ putClip(stopText(), $("np-area")); return; }
+  const np=e.target.closest("[data-np]"); if(np){ goNext(np.dataset.np); return; }
+  if(e.target.closest("[data-npok]")){ goNext(($("np")||{}).value); return; }
   if(e.target.closest("[data-npcancel]")){ placeEdit=false; renderBatchBar(); return; }
   if(e.target.closest("[data-gomemo]")){ salesKey=curKey(); show("sales"); const h=$("memo-h"); if(h) h.scrollIntoView({block:"start"}); return; }
   const b=e.target.closest("[data-mode]"); if(!b) return; S.mode=b.dataset.mode; save(); renderBatchBar(); renderGrid(); });
