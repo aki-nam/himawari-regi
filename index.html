@@ -8,7 +8,7 @@
 :root{
   --bg:#f6f7f2; --surface:#ffffff; --fg:#1f2a24; --muted:#5d6b62; --line:#d9ded4;
   --accent:#1f6b4a; --accent-fg:#ffffff; --sun:#f2b705; --sun-fg:#2a2100;
-  --cat1:#fdf1d6; --cat2:#e3f0e8; --cat3:#e6ecf7;
+  --cat1:#fdf1d6; --cat2:#e3f0e8; --cat3:#e6ecf7; --cat4:#fbe3ec;
   --danger:#b3261e; --paypay:#d6002a;
   --f-display:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Yu Gothic",sans-serif;
   --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
@@ -16,11 +16,11 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#121815; --surface:#1b231f; --fg:#e8eee9; --muted:#9aa89f; --line:#2e3a33;
   --accent:#4fb385; --accent-fg:#0b1a12; --sun:#f2c33a; --sun-fg:#231b00;
-  --cat1:#33291a; --cat2:#1d3127; --cat3:#1f2736; --danger:#ff8a80; --paypay:#ff5c7a; color-scheme:dark}}
+  --cat1:#33291a; --cat2:#1d3127; --cat3:#1f2736; --cat4:#3a2230; --danger:#ff8a80; --paypay:#ff5c7a; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#121815; --surface:#1b231f; --fg:#e8eee9; --muted:#9aa89f; --line:#2e3a33;
   --accent:#4fb385; --accent-fg:#0b1a12; --sun:#f2c33a; --sun-fg:#231b00;
-  --cat1:#33291a; --cat2:#1d3127; --cat3:#1f2736; --danger:#ff8a80; --paypay:#ff5c7a; color-scheme:dark}
+  --cat1:#33291a; --cat2:#1d3127; --cat3:#1f2736; --cat4:#3a2230; --danger:#ff8a80; --paypay:#ff5c7a; color-scheme:dark}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.5;
@@ -40,13 +40,35 @@ nav button[aria-selected="true"]{background:var(--accent);color:var(--accent-fg)
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
 .chips button{flex:none;font:inherit;font-size:.9rem;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
 .chips button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:6px}
+.grid{--bw:150px;display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--bw),1fr));gap:8px;margin-top:6px}
+.grid.sz-m{--bw:104px} .grid.sz-s{--bw:84px}
+/* あいうえお順・縦：右の列の上から下へ、次に左の列へ */
+.grid.col{display:block;column-width:var(--bw);column-gap:8px;direction:rtl}
+.grid.col>*{direction:ltr;break-inside:avoid;-webkit-column-break-inside:avoid;margin-bottom:8px}
+.grid.col .item{width:100%}
+.grid.col .kgrp .item{margin:0}
+.kh{grid-column:1/-1;font-family:var(--f-display);font-weight:800;font-size:.85rem;color:var(--muted);border-bottom:2px solid var(--line);padding:2px 2px 0}
+.grid.col .kh{margin:0 0 4px}
+/* すっきり表示：レジではボタン以外（タイトル・販売先・タブ・案内）を隠す */
+body.compact header .brand,body.compact header nav,body.compact #batchbar{display:none}
+.chips button.cmp{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:700}
+.prices{display:flex;gap:6px;overflow-x:auto;padding:6px 6px 2px 2px;align-items:center}
+@media (min-width:600px){.prices{flex-wrap:wrap;overflow:visible}}
+.prices .lbl{flex:none;font-size:.85rem;color:var(--muted)}
+.prices button{flex:none;position:relative;font-family:var(--f-display);font-weight:800;font-size:1.05rem;padding:8px 14px;border-radius:10px;border:2px solid var(--sun);background:var(--surface);color:var(--fg);cursor:pointer;font-variant-numeric:tabular-nums;-webkit-tap-highlight-color:transparent}
+.prices button:active{transform:scale(.96)}
+.prices .badge{top:-5px;right:-5px;min-width:22px;height:22px;font-size:.8rem;padding:0 5px}
 .item{position:relative;text-align:left;min-height:86px;padding:10px 10px 8px;border-radius:12px;border:1px solid var(--line);color:var(--fg);cursor:pointer;
   display:flex;flex-direction:column;justify-content:space-between;gap:4px;font:inherit;-webkit-tap-highlight-color:transparent;transition:transform .06s}
 .item:active{transform:scale(.97)}
 .item[data-cat="菓子パン"]{background:var(--cat1)} .item[data-cat="惣菜パン"]{background:var(--cat2)} .item[data-cat="サンド・パイ・他"]{background:var(--cat3)}
 .item .nm{font-family:var(--f-display);font-weight:800;font-size:1rem;line-height:1.3;word-break:break-word}
 .item .pr{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.95rem}
+.item[data-cat="イベント"]{background:var(--cat4)}
+.grid.sz-m .item{min-height:72px;padding:8px 8px 6px}
+.grid.sz-m .item .nm{font-size:.9rem} .grid.sz-m .item .pr{font-size:.85rem}
+.grid.sz-s .item{min-height:62px;padding:6px 6px 5px;border-radius:10px;gap:2px}
+.grid.sz-s .item .nm{font-size:.8rem;line-height:1.25} .grid.sz-s .item .pr,.grid.sz-s .item .rem{font-size:.75rem}
 .badge{position:absolute;top:-6px;right:-6px;min-width:30px;height:30px;padding:0 8px;border-radius:15px;background:var(--sun);color:var(--sun-fg);
   font-family:var(--f-display);font-weight:800;display:grid;place-items:center;font-size:1rem;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);
@@ -164,6 +186,7 @@ textarea{width:100%;min-height:9em}
     </nav>
     <div id="batchbar"></div>
     <div class="chips" id="chips"></div>
+    <div class="prices" id="prices" hidden></div>
   </header>
 
   <main>
@@ -221,8 +244,16 @@ function catOf(n){
 }
 const norm = s => String(s||"").replace(/[\s　]/g,"").replace(/株式会社|㈱|\(株\)|（株）/g,"").normalize("NFKC");
 
-let S = {menu:DEFAULT_MENU.map(r=>r.slice()), cats:{}, hidden:{}, sales:[], place:"", batch:null, batches:{}, roster:{}, mode:"batch", notes:{}, newNames:{}, writers:[]};
+// 値段ボタン（どのパンか分からないまま値段だけで会計）：番号 900000＋値段
+const PRICE_NO = 900000;
+// イベント用メニューの番号は 501 から（QR・メニューマスタの番号とぶつからない。Excelの販売残には入らない）
+const EXTRA_NO = 500;
+const priceSale = s => s.items.some(i=>i.no>PRICE_NO);
+
+let S = {menu:DEFAULT_MENU.map(r=>r.slice()), cats:{}, hidden:{}, sales:[], place:"", batch:null, batches:{}, roster:{}, mode:"batch", notes:{}, newNames:{}, writers:[],
+  extra:[], yomi:{}, sort:"kcol", size:"", priceBtns:true, prices:"", compact:false};
 try{ const raw = localStorage.getItem(KEY); if(raw){ const o = JSON.parse(raw); if(o && Array.isArray(o.menu)) S = Object.assign(S,o); } }catch(e){}
+S.extra=S.extra||[]; S.yomi=S.yomi||{};
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 
 let cart = {};          // 番号 -> 個数
@@ -249,8 +280,27 @@ function menuFor(dateStr){
     .map(r=>({no:r[1], name:String(r[2]).trim(), price:Number(r[3]), cat:S.cats[String(r[2]).trim()]||catOf(String(r[2])), show:!S.hidden[String(r[2]).trim()], start:r[0]}));
 }
 function workDate(){ return S.batch ? S.batch.date : today(); }
-function curMenu(){ return menuFor(workDate()); }
-function item(no){ return curMenu().find(m=>m.no===Number(no)); }
+const extraItem = x => ({no:x.no, name:x.name, price:Number(x.price), cat:"イベント", show:true, extra:true});
+function extras(){ return S.extra.filter(x=>x.on).map(extraItem); }
+// レジに並べるのは、その月のメニュー＋イベント用メニュー（販売残・Excelの並びは menuFor のまま）
+function curMenu(){ return menuFor(workDate()).concat(extras()); }
+function item(no){ no=Number(no);
+  if(no>PRICE_NO) return {no, name:(no-PRICE_NO)+"円の品", price:no-PRICE_NO, cat:"値段", show:true};
+  const m=curMenu().find(m=>m.no===no); if(m) return m; const x=S.extra.find(x=>x.no===no); return x?extraItem(x):undefined; }
+function nameOf(no, menu){ const m=menu.find(x=>x.no===no); if(m) return m.name; const it=item(no); return it?it.name:"番号"+no; }
+
+/* ---------- あいうえお順（よみ） ---------- */
+const YOMI_MAP=[["富良野","ふらの"],["北欧","ほくおう"],["手作り","てづくり"],["焼き","やき"],["玄米","げんまい"],["抹茶","まっちゃ"],["焦がし","こがし"],["調理","ちょうり"],["小豆","あずき"],["枚切り","まいぎり"],["食","しょく"],["白","しろ"],["雪","ゆき"],["斤","きん"]];
+function autoYomi(n){ let s=String(n).normalize("NFKC"); YOMI_MAP.forEach(([k,v])=>{ s=s.split(k).join(v); });
+  return s.replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)).replace(/[\s()（）【】\[\]・&＆]/g,""); }
+function yomiOf(n){ return S.yomi[n] || autoYomi(n); }
+const GYO=[["あ","あいうえお"],["か","かきくけこ"],["さ","さしすせそ"],["た","たちつてと"],["な","なにぬねの"],["は","はひふへほ"],["ま","まみむめも"],["や","やゆよ"],["ら","らりるれろ"],["わ","わをん"]];
+function gyoOf(y){ let c=String(y||"").normalize("NFD").charAt(0); const i="ぁぃぅぇぉっゃゅょゎ".indexOf(c); if(i>=0) c="あいうえおつやゆよわ"[i];
+  const g=GYO.find(([h,s])=>s.includes(c)); return g?g[0]+"行":"そのほか"; }
+function arrange(list){
+  if(S.sort==="no") return list.slice().sort((a,b)=>a.no-b.no);
+  return list.map(m=>Object.assign({},m,{yomi:yomiOf(m.name)})).sort((a,b)=>a.yomi.localeCompare(b.yomi,"ja")||a.no-b.no);
+}
 
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2200); }
 
@@ -288,7 +338,8 @@ function remaining(){ if(!S.batch) return null; const sold=soldIn(S.batch.key), 
 /* ---------- 前の販売先の残りを足す（同じ日に先に回った販売先の残りを、今の持参に足す） ---------- */
 function mergeItems(a, b){ const m={}; a.concat(b).forEach(i=>{ m[i.no]=(m[i.no]||0)+i.qty; }); return Object.keys(m).map(Number).sort((x,y)=>x-y).map(no=>({no,qty:m[no]})); }
 // 電卓で売った販売先（レジの会計が無く、残り入力で残りを数えた／次へ進んだ）は、数えた残りを使う
-function zanMode(k){ const z=S.manual&&S.manual[k]; return !!z && !S.sales.some(s=>s.batchKey===k) && (!!z.done || Object.keys(z.zan||{}).length>0); }
+// 値段ボタンで売った分がある日も、どのパンが残ったか分からないので、数えた残りを使う
+function zanMode(k){ const z=S.manual&&S.manual[k], L=S.sales.filter(s=>s.batchKey===k); return !!z && (!L.length || L.some(priceSale)) && (!!z.done || Object.keys(z.zan||{}).length>0); }
 function restOf(key){ const b=S.batches[key]; if(!b) return [];
   if(zanMode(key)){ const z=S.manual[key].zan||{}; return b.items.map(i=>({no:i.no,qty:z[i.no]||0})).filter(i=>i.qty>0); }
   const sold=soldIn(key); return b.items.map(i=>({no:i.no,qty:i.qty-(sold[i.no]||0)})).filter(i=>i.qty>0); }
@@ -344,6 +395,8 @@ function renderBatchBar(){
   if(cur && cur.carry){ const n=cur.carry.items.reduce((s,i)=>s+i.qty,0);
     b.innerHTML += `<div class="carry"><span class="on">＋ ${esc(cur.carry.from)} の残り ${n}個を足しています</span><button type="button" data-uncarry="1">足した分を外す</button></div>`; }
   else if(C.length) b.innerHTML += `<div class="carry">${C.map(c=>`<button type="button" data-carry="${esc(c.k)}">＋ ${esc(c.place)} の残り ${c.n}個を足す</button>`).join("")}</div>`;
+  const pn=S.sales.filter(s=>s.batchKey===S.batch.key).reduce((a,s)=>a+s.items.filter(i=>i.no>PRICE_NO).reduce((x,i)=>x+i.qty,0),0);
+  if(pn) b.innerHTML += `<div class="carry"><span class="note" style="margin:0">値段ボタンで売った ${pn}個は、パンの「残り」に入っていません。終わったら残ったパンを数えて「残り入力」に入れてください。</span></div>`;
 }
 // 【ここを終わる・次の販売先へ】：① ここの売上と残りをLINEへ → ② 次の販売先を選ぶと、残ったパンを持ったまま次で売る
 // （売上・お名前・販売メモは販売先ごとに別に残る。販売残とメモは、会社にもどってから「売上」でゆっくり送る）
@@ -370,7 +423,7 @@ function placePanel(){
 // 途中の報告：ここで売れたパンと、今持っている残り
 function stopText(){
   const here=hereName(), g=groups().find(x=>x.k===curKey()), list=g?g.list:[], menu=menuFor(S.batch.date);
-  const nm=no=>{ const m=menu.find(x=>x.no===no); return m?m.name:"番号"+no; };
+  const nm=no=>nameOf(no, menu);
   const sold={}; let cash=0, pp=0, pcs=0;
   list.forEach(s=>{ s.items.forEach(i=>{ sold[i.no]=(sold[i.no]||0)+i.qty; pcs+=i.qty; }); if(s.pay==="PayPay") pp+=s.total; else cash+=s.total; });
   const all=soldIn(S.batch.key), rest=S.batch.items.map(i=>({no:i.no, q:i.qty-(all[i.no]||0)})).filter(x=>x.q>0);
@@ -398,20 +451,45 @@ function setPlace(name){
 }
 function renderChips(){
   const c=$("chips"); c.hidden = tab!=="reg";
-  c.innerHTML = ["すべて",...CATS].map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("");
+  document.body.classList.toggle("compact", tab==="reg" && !!S.compact);
+  const cats=["すべて",...CATS].concat(extras().length?["イベント"]:[]);
+  c.innerHTML = `<button type="button" class="cmp" data-compact="1">${S.compact?"▼ 上を出す":"▲ 上を隠す"}</button>` +
+    cats.map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("");
 }
+// 値段ボタン：今並んでいるパン（持参分＋イベント）の値段。設定で決めた値段があればそちら
+function priceList(){
+  const own=String(S.prices||"").normalize("NFKC").split(/[^\d]+/).map(Number).filter(n=>n>0);
+  let L=own;
+  if(!L.length){ const inB=S.batch&&S.mode==="batch" ? new Set(S.batch.items.map(i=>i.no)) : null;
+    L=curMenu().filter(m=>inB ? (inB.has(m.no)||m.extra) : m.show).map(m=>m.price); }
+  return [...new Set(L)].sort((a,b)=>a-b);
+}
+function renderPrices(){
+  const el=$("prices"), on = tab==="reg" && S.priceBtns!==false; el.hidden=!on; if(!on) return;
+  el.innerHTML = `<span class="lbl">値段で</span>` + priceList().map(p=>{ const q=cart[PRICE_NO+p]||0;
+    return `<button type="button" data-price="${p}" aria-label="${p}円の品を1つ">${yen(p)}${q?`<span class="badge">${q}</span>`:""}</button>`; }).join("");
+}
+function btnSize(){ return S.size || (window.innerWidth<600?"m":"l"); }
 function renderGrid(){
   const rem = remaining(); const inBatch = S.batch ? new Set(S.batch.items.map(i=>i.no)) : null;
+  const sort=S.sort||"kcol", col=sort==="kcol";
   let list = curMenu().filter(m=>(catFilter==="すべて"||m.cat===catFilter));
-  if(S.batch && S.mode==="batch") list = list.filter(m=>inBatch.has(m.no)); else list = list.filter(m=>m.show);
-  $("grid").innerHTML = list.length ? list.map(m=>{
+  if(S.batch && S.mode==="batch") list = list.filter(m=>inBatch.has(m.no)||m.extra); else list = list.filter(m=>m.show);
+  list = arrange(list);
+  const grid=$("grid"); grid.className="grid sz-"+btnSize()+(col?" col":"");
+  let last="";
+  grid.innerHTML = list.length ? list.map(m=>{
       const r = rem && inBatch.has(m.no) ? rem[m.no] : null;
-      return `<button type="button" class="item${r!==null&&r<=0?" out":""}" data-no="${m.no}" data-cat="${esc(m.cat)}">
+      const btn = `<button type="button" class="item${r!==null&&r<=0?" out":""}" data-no="${m.no}" data-cat="${esc(m.cat)}">
       <span class="nm">${esc(m.name)}</span><span class="pr">${yen(m.price)}</span>
       ${r!==null?`<span class="rem${r<=0?" zero":""}">${r>0?"残り "+r+"個":(r===0?"売り切れ":"持参より "+(-r)+"個多い")}</span>`:""}
       ${r!==null&&r<=0?`<span class="want" data-want="${m.no}" role="button" aria-label="${esc(m.name)}を欲しかった人を1人ふやす">欲しかった＋1${wantOf(m.no)?`（${wantOf(m.no)}人）`:""}</span>`:""}
-      ${cart[m.no]?`<span class="badge">${cart[m.no]}</span>`:""}</button>`; }).join("")
+      ${cart[m.no]?`<span class="badge">${cart[m.no]}</span>`:""}</button>`;
+      // あいうえお順は「あ行」「か行」の見出しを付ける（縦のときは見出しと最初のボタンを離さない）
+      if(sort==="no") return btn; const h=gyoOf(m.yomi); if(h===last) return btn; last=h;
+      return col ? `<div class="kgrp"><div class="kh">${h}</div>${btn}</div>` : `<div class="kh">${h}</div>${btn}`; }).join("")
     : `<div class="empty">表示するパンがありません。分類を「すべて」にするか、「設定」で表示をオンにしてください。</div>`;
+  renderPrices();
 }
 function renderBar(){
   $("cnt").textContent = cartCount()+"点"; $("tot").textContent = yen(cartTotal());
@@ -541,7 +619,9 @@ function changeBrought(key, no, d){
   recompute(key); save();
 }
 // 発注_統合_v2 の B列（持参数）を直す品：前の販売先から足した品・直した品・持参より多く売れた品
-function fixList(g, sm){ return g.batch && !g.batch.noqr ?sm.rows.filter(r=>r.brought!=null||r.qty).map(r=>({r, to:Math.max(r.brought||0, r.all??r.qty)})).filter(x=>x.to!==(x.r.org||0)) : []; }
+function fixList(g, sm){ return g.batch && !g.batch.noqr ?sm.rows.filter(r=>r.no<EXTRA_NO && (r.brought!=null||r.qty)).map(r=>({r, to:Math.max(r.brought||0, r.all??r.qty)})).filter(x=>x.to!==(x.r.org||0)) : []; }
+// 品の残り：残りを数えて入れたとき（値段ボタンの日など）はその数、ふだんは 持参−売れた
+function restRow(g, r){ if(g.batch && zanMode(g.k)) return (S.manual[g.k].zan||{})[r.no]||0; return r.brought-(r.all??r.qty); }
 function buyersOf(g){
   const b={}; g.list.forEach(s=>{ const n=s.buyer||"（名前なし）"; const o=b[n]=b[n]||{n,times:0,pieces:0,amt:0,items:{}}; o.times++; o.amt+=s.total; s.items.forEach(i=>{ o.pieces+=i.qty; o.items[i.name]=(o.items[i.name]||0)+i.qty; }); });
   return Object.values(b).sort((a,b)=>b.amt-a.amt);
@@ -651,6 +731,7 @@ function renderZan(){
   const b=S.batches[zanKey], z=zanOf(zanKey), R=zanRows(zanKey), t=zanTotals(R);
   v.innerHTML = `<h2>残り入力（電卓で売った日）</h2>
    <p class="note">レジで会計をしないで、電卓で売った日に使います。販売が終わったら、<b>残ったパンのボタンを押して数を入れ</b>、メモ・連絡事項を書いて、LINEで送ります。この画面の報告には、レジの会計は入りません（レジをさわってしまっても大丈夫です）。</p>
+   ${S.sales.some(s=>s.batchKey===zanKey && priceSale(s))?`<div class="fix" style="border-left-color:var(--sun);margin-bottom:10px"><b>値段ボタンで売った分があります</b><br><span class="note">どのパンが売れたか分からないので、ここで残ったパンを数えてください。販売残と、次の販売先へ持って行く残りは、ここで数えた数になります（売上の金額は「売上」タブの方が正確です）。</span></div>`:""}
    <label for="z-sel" class="muted">日付・販売先</label>
    <select id="z-sel">${K.map(k=>`<option value="${esc(k)}" ${k===zanKey?"selected":""}>${jpDate(S.batches[k].date)}　${esc(S.batches[k].place)}${S.batches[k].noqr?"（QRなし）":""}</option>`).join("")}</select>
    ${b.carry?`<p class="note">＋ ${esc(b.carry.from)} の残り ${b.carry.items.reduce((s,i)=>s+i.qty,0)}個を持参に入れています。</p>`:""}
@@ -685,7 +766,8 @@ function renderZan(){
 function zanCopy(kind){
   if(!zanKey || !S.batches[zanKey]) return; const b=S.batches[zanKey], z=zanOf(zanKey), R=zanRows(zanKey), t=zanTotals(R); let txt;
   if(kind==="line"){
-    txt = `【${jpDate(b.date)} ${b.place} 販売の報告（電卓で販売${b.noqr?"・QRなし":""}）】\n` + (z.who?`記入者：${z.who}\n`:"") +
+    const reg = S.sales.some(s=>s.batchKey===zanKey);
+    txt = `【${jpDate(b.date)} ${b.place} 販売の報告（${reg?"レジ＋残りを数えて":"電卓で販売"}${b.noqr?"・QRなし":""}）】\n` + (z.who?`記入者：${z.who}\n`:"") +
       `持参 ${t.qty}個　売れた ${t.sold}個　残り ${t.zan}個\n売上（計算）${yen(t.amt)}\n` + (b.carry?`※ ${b.carry.from} の残りを足して販売\n`:"") + "\n" +
       R.map(r=>`・${r.name}　持参${r.qty}・残り${r.zan}`).join("\n");
     const fx=zanFix(zanKey); if(fx.length) txt += "\n\n【事務所へ】販売残を貼る前に、B列（持参数）を直す品\n" + fx.map(x=>`・${x.name}　${x.from} → ${x.to}`).join("\n");
@@ -706,7 +788,8 @@ function renderSales(){
   const g=G.find(x=>x.k===salesKey), sm=summarize(g), hasB=!!g.batch, B=buyersOf(g);
   // 発注_統合_v2 の B列（持参数）を直す品：前の販売先から足した品と、持参より多く売れた品
   const fix = fixList(g, sm);
-  const over = hasB && sm.rows.some(r=>r.qty>(r.brought||0));
+  const over = hasB && sm.rows.some(r=>r.no<EXTRA_NO && r.qty>(r.brought||0));
+  const pr = sm.rows.filter(r=>r.no>PRICE_NO), prn = pr.reduce((s,r)=>s+r.qty,0);
   const cfrom = hasB && g.batch.carry ? g.batch.carry.from : "", cto = hasB && g.batch.carriedTo && S.batches[g.batch.carriedTo] ? S.batches[g.batch.carriedTo].place : "";
   v.innerHTML = `<h2>売上</h2>
    <label for="sel" class="muted">日付・販売先</label>
@@ -721,8 +804,10 @@ function renderSales(){
    ${g.via?`<p class="note">${esc(S.batches[g.via]?S.batches[g.via].place:"QRの販売先")} のQRのパンで売った販売先です。持参・残り・販売残は ${esc(S.batches[g.via]?S.batches[g.via].place:"QRの販売先")} の画面にまとめて出ます。</p>`:""}
    ${hasB&&sm.others.length?`<p class="note">QRなしで回った販売先（${esc(sm.others.map(o=>o.place+" "+o.n+"個").join("・"))}）で売れた数も「ほかで」に入れて、残りを出しています。</p>`:""}
    <div class="tblwrap"><table class="tbl"><thead><tr><th>品名</th>${hasB?`<th class="r">持参</th>`:""}<th class="r">売れた</th>${hasB&&sm.others.length?`<th class="r">ほかで</th>`:""}${hasB?`<th class="r">残り</th>`:""}<th class="r">金額</th></tr></thead><tbody>
-     ${sm.rows.map(r=>{ const rest = r.brought==null?null:r.brought-(r.all??r.qty); return `<tr><td>${esc(r.name)}</td>${hasB?`<td class="r">${r.brought==null?"—":r.brought}${r.carried?`<br><span class="note">うち足した${r.carried}</span>`:""}${r.adj?`<br><span class="note">直した${r.adj>0?"＋":"−"}${Math.abs(r.adj)}</span>`:""}</td>`:""}<td class="r${r.qty?"":" zero"}">${r.qty}</td>${hasB&&sm.others.length?`<td class="r${(r.all-r.qty)?"":" zero"}">${(r.all??r.qty)-r.qty}</td>`:""}${hasB?`<td class="r${rest>0?"":" zero"}">${rest==null?"—":rest}</td>`:""}<td class="r">${yen(r.amt)}</td></tr>`; }).join("")}
+     ${sm.rows.map(r=>{ const rest = r.brought==null?null:restRow(g,r); return `<tr><td>${esc(r.name)}</td>${hasB?`<td class="r">${r.brought==null?"—":r.brought}${r.carried?`<br><span class="note">うち足した${r.carried}</span>`:""}${r.adj?`<br><span class="note">直した${r.adj>0?"＋":"−"}${Math.abs(r.adj)}</span>`:""}</td>`:""}<td class="r${r.qty?"":" zero"}">${r.qty}</td>${hasB&&sm.others.length?`<td class="r${(r.all-r.qty)?"":" zero"}">${(r.all??r.qty)-r.qty}</td>`:""}${hasB?`<td class="r${rest>0?"":" zero"}">${rest==null?"—":rest}</td>`:""}<td class="r">${yen(r.amt)}</td></tr>`; }).join("")}
    </tbody></table></div>
+   ${prn?`<div class="fix" style="border-left-color:var(--sun)"><b>値段ボタンで売った分 ${prn}個（${yen(pr.reduce((s,r)=>s+r.amt,0))}）</b><br>
+     <span class="note">どのパンか分からないので、上の「残り」には入っていません。${hasB?(zanMode(g.k)?"「残り入力」で数えた残りを、販売残に使います。":"残ったパンを数えて「残り入力」タブに入れると、販売残はその数になります。"):""}</span></div>`:""}
    ${hasB?broughtEditor(g, sm):""}
    <div class="row" style="margin-top:10px">
      <button class="btn primary" type="button" id="cp-line">LINE用にコピー</button>
@@ -760,8 +845,10 @@ function copyText(kind){
     const vp = g.via ? (S.batches[g.via]?S.batches[g.via].place:"QRの販売先") : "";
     const cv = vp ? `※ QRなし。${vp} のパンを続けて販売（持参・販売残は ${vp} の報告にまとめて）\n` : "";
     const co = sm.others.length ? `※ QRなしで回った販売先：${sm.others.map(o=>o.place+" "+o.n+"個").join("・")}（残りはそこで売れた分を引いた数）\n` : "";
-    txt = `【${jpDate(g.date)} ${g.place} 売上】\nお客さま ${sm.count}人　${sm.pieces}個\n合計 ${yen(sm.total)}（現金 ${yen(sm.cash)}／PayPay ${yen(sm.pp)}）\n${cf}${ct}${cv}${co}\n` +
-      sm.rows.filter(r=>r.qty||r.brought).map(r=>`・${r.name}　${r.qty}個${r.brought!=null?`（持参${r.brought}${r.carried?`うち足した${r.carried}`:""}${(r.all??r.qty)>r.qty?`・ほかで${r.all-r.qty}`:""}・残り${r.brought-(r.all??r.qty)}）`:""}　${yen(r.amt)}`).join("\n");
+    const pn = sm.rows.filter(r=>r.no>PRICE_NO).reduce((s,r)=>s+r.qty,0);
+    const cp = pn ? `※ 値段ボタンで売った分 ${pn}個（品は分かりません。残りは${zanMode(g.k)?"数えた数":"数えて確かめてください"}）\n` : "";
+    txt = `【${jpDate(g.date)} ${g.place} 売上】\nお客さま ${sm.count}人　${sm.pieces}個\n合計 ${yen(sm.total)}（現金 ${yen(sm.cash)}／PayPay ${yen(sm.pp)}）\n${cf}${ct}${cv}${co}${cp}\n` +
+      sm.rows.filter(r=>r.qty||r.brought).map(r=>`・${r.name}　${r.qty}個${r.brought!=null?`（持参${r.brought}${r.carried?`うち足した${r.carried}`:""}${(r.all??r.qty)>r.qty?`・ほかで${r.all-r.qty}`:""}・残り${restRow(g,r)}）`:""}　${yen(r.amt)}`).join("\n");
     const fx = fixList(g, sm); if(fx.length) txt += "\n\n【事務所へ】販売残を貼る前に、B列（持参数）を直す品\n" + fx.map(x=>`・${x.r.name}　${x.r.org||0} → ${x.to}`).join("\n");
     const ml = memoLines(g, sm); if(ml.length) txt += "\n\n" + ml.join("\n");
   } else if(kind==="memo"){
@@ -773,7 +860,10 @@ function copyText(kind){
   } else if(kind==="zan"){
     // 販売実績入力の並び（その月のメニューの番号順・全品）に合わせて、残りの数だけ（0は空欄）
     // LINEで送ると空白の行が消えることがあるので、売り切れ・持参なしは 0 にする（0 は販売残なしとして登録される）
-    const by = {}; sm.rows.forEach(r=>{ if(r.brought!=null){ const rest=r.brought-(r.all??r.qty); by[r.no]= rest>0?rest:0; } });
+    const by = {};
+    // 値段ボタンで売った日など、残りを数えて入れたときは、その数
+    if(g.batch && zanMode(g.k)){ const z=S.manual[g.k].zan||{}; g.batch.items.forEach(i=>by[i.no]=z[i.no]||0); }
+    else sm.rows.forEach(r=>{ if(r.brought!=null){ const rest=r.brought-(r.all??r.qty); by[r.no]= rest>0?rest:0; } });
     txt = sm.menu.map(m=>by[m.no]===undefined?0:by[m.no]).join("\n");
   } else {
     txt = ["日付\t販売先\tお名前\t回数\t個数\t金額\t買ったパン"].concat(buyersOf(g).map(o=>`${g.date}\t${g.place}\t${o.n}\t${o.times}\t${o.pieces}\t${o.amt}\t${Object.entries(o.items).map(([k,q])=>k+"×"+q).join("、")}`)).join("\n");
@@ -793,13 +883,42 @@ function askConfirm(msg, onYes){
 
 /* ---------- 設定（メニュー・名簿） ---------- */
 function renderMenu(){
-  const v=$("v-menu"); const M=curMenu(); const start = M.length?M[0].start:"";
+  const v=$("v-menu"); const M=menuFor(workDate()); const start = M.length?M[0].start:"";
   const rc = Object.entries(S.roster||{}), nn = Object.entries(S.newNames||{}).filter(([p,l])=>l.length);
-  v.innerHTML = `<h2>メニュー（${esc(start)} からのメニュー）</h2>
+  const sort=S.sort||"kcol", size=S.size||"", pb=S.priceBtns!==false;
+  const ch=(attr,val,cur,label)=>`<button type="button" ${attr}="${val}" aria-pressed="${val===cur}">${label}</button>`;
+  v.innerHTML = `<h2>レジのボタンの並び方</h2>
+   <div class="chips" style="flex-wrap:wrap;overflow:visible">${ch("data-sort","kcol",sort,"あいうえお順・縦（右上から）")}${ch("data-sort","krow",sort,"あいうえお順・横（左上から）")}${ch("data-sort","no",sort,"番号順")}</div>
+   <p class="note">縦（右上から）は、あいうえお表と同じで、いちばん右の列を上から下へ、次にその左の列へと並びます。「あ行」「か行」の見出しが付きます。よみ（ひらがな）がおかしい品は、下のメニューの表の「よみ」で直せます。</p>
+   <h2>ボタンの大きさ</h2>
+   <div class="chips" style="flex-wrap:wrap;overflow:visible">${ch("data-size","",size,"おまかせ（スマホは中・iPadは大）")}${ch("data-size","s",size,"小")}${ch("data-size","m",size,"中")}${ch("data-size","l",size,"大")}</div>
+   <p class="note">レジの画面の【▲ 上を隠す】を押すと、タイトル・販売先・タブ・案内が消えて、ボタンを広く使えます（【▼ 上を出す】で戻ります）。</p>
+   <h2>値段ボタン（混んでいるとき）</h2>
+   <div class="chips" style="flex-wrap:wrap;overflow:visible">${ch("data-pb","on",pb?"on":"off","出す")}${ch("data-pb","off",pb?"on":"off","出さない")}</div>
+   <label for="p-list" class="muted" style="display:block;margin-top:8px">出す値段（空欄なら、今並んでいるパンの値段を全部出します）</label>
+   <input id="p-list" type="text" inputmode="numeric" value="${esc(S.prices||"")}" placeholder="${esc(priceList().join("、"))}" style="font:inherit;width:100%;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)">
+   <p class="note">パンの名前を探すひまが無いときは、上の【¥180】【¥200】…を押して値段だけで会計できます。どのパンか分からないので「残り」の数には入りません。<b>値段ボタンを使った日は、終わってから残ったパンを数えて「残り入力」に入れてください</b>（販売残はその数になります）。</p>
+   <h2>イベント用メニュー（その日だけの品）</h2>
+   <p class="note">イベントで出す品を、ここで足せます。足した品は「イベント」の分類で、持参分（QR）と一緒にいつも並びます。売上とLINEの報告には入りますが、Excelの販売残には入りません。イベントが終わったら「出す」を外してください（また使うときはチェックを入れるだけ）。</p>
+   ${S.extra.length?`<div class="tblwrap"><table class="tbl medit"><thead><tr><th>出す</th><th>品名</th><th>よみ</th><th class="r">値段</th><th></th></tr></thead><tbody>
+   ${S.extra.map(x=>`<tr data-ex="${x.no}"><td><input type="checkbox" data-xf="on" ${x.on?"checked":""} aria-label="${esc(x.name)}を出す"></td>
+     <td><input type="text" data-xf="name" value="${esc(x.name)}" aria-label="品名"></td>
+     <td><input type="text" data-xf="yomi" value="${esc(yomiOf(x.name))}" aria-label="よみ"></td>
+     <td style="width:6.5em"><input type="number" data-xf="price" inputmode="numeric" value="${x.price}" aria-label="値段"></td>
+     <td><button class="btn danger" type="button" data-xdel="${x.no}" style="padding:6px 10px;font-size:.9rem">消す</button></td></tr>`).join("")}
+   </tbody></table></div>`:""}
+   <div class="medit" style="display:grid;grid-template-columns:2fr 1fr;gap:6px;margin-top:8px">
+     <input type="text" id="x-name" placeholder="品名（例：栗あんぱん）" aria-label="足す品名">
+     <input type="number" id="x-price" inputmode="numeric" placeholder="値段" aria-label="足す品の値段">
+     <input type="text" id="x-yomi" placeholder="よみ（例：くりあんぱん）なくてもOK" aria-label="足す品のよみ" style="grid-column:1/-1">
+   </div>
+   <div class="row" style="margin-top:8px"><button class="btn primary" type="button" id="x-add">イベントの品を足す</button></div>
+   <h2>メニュー（${esc(start)} からのメニュー）</h2>
    <p class="note">値段や名前を直すと、すぐにレジのボタンに反映されます。売らない品は「表示」を外してください。持参分のQRを読んだときは、持参したパンが必ず出ます。</p>
-   <div class="tblwrap"><table class="tbl medit"><thead><tr><th>表示</th><th class="r">番号</th><th>品名</th><th class="r">値段</th><th>分類</th></tr></thead><tbody>
+   <div class="tblwrap"><table class="tbl medit"><thead><tr><th>表示</th><th class="r">番号</th><th>品名</th><th>よみ</th><th class="r">値段</th><th>分類</th></tr></thead><tbody>
    ${M.map(m=>`<tr data-no="${m.no}"><td><input type="checkbox" id="sh-${m.no}" data-f="show" ${m.show?"checked":""} aria-label="${esc(m.name)}を表示"></td><td class="r">${m.no}</td>
      <td><input type="text" id="nm-${m.no}" data-f="name" value="${esc(m.name)}" aria-label="品名"></td>
+     <td><input type="text" id="ym-${m.no}" data-f="yomi" value="${esc(yomiOf(m.name))}" aria-label="よみ"></td>
      <td style="width:6.5em"><input type="number" id="pr-${m.no}" data-f="price" inputmode="numeric" value="${m.price}" aria-label="値段"></td>
      <td><select id="ct-${m.no}" data-f="cat" aria-label="分類">${CATS.map(c=>`<option ${c===m.cat?"selected":""}>${c}</option>`).join("")}</select></td></tr>`).join("")}
    </tbody></table></div>
@@ -853,7 +972,7 @@ function show(t){
   document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===t));
   $("v-reg").hidden=t!=="reg"; $("v-sales").hidden=t!=="sales"; $("v-zan").hidden=t!=="zan"; $("v-menu").hidden=t!=="menu";
   if(t==="sales") renderSales(); if(t==="zan") renderZan(); if(t==="menu") renderMenu(); if(t==="reg") renderGrid();
-  renderBatchBar(); renderChips(); renderBar(); window.scrollTo(0,0);
+  renderBatchBar(); renderChips(); renderPrices(); renderBar(); window.scrollTo(0,0);
 }
 
 /* ---------- 操作 ---------- */
@@ -870,7 +989,11 @@ $("batchbar").addEventListener("click",e=>{
   if(e.target.closest("[data-npcancel]")){ placeEdit=false; renderBatchBar(); return; }
   if(e.target.closest("[data-gomemo]")){ salesKey=curKey(); show("sales"); const h=$("memo-h"); if(h) h.scrollIntoView({block:"start"}); return; }
   const b=e.target.closest("[data-mode]"); if(!b) return; S.mode=b.dataset.mode; save(); renderBatchBar(); renderGrid(); });
-$("chips").addEventListener("click",e=>{ const b=e.target.closest("button[data-cat]"); if(!b) return; catFilter=b.dataset.cat; renderChips(); renderGrid(); });
+$("chips").addEventListener("click",e=>{
+  if(e.target.closest("[data-compact]")){ S.compact=!S.compact; save(); renderChips(); return; }
+  const b=e.target.closest("button[data-cat]"); if(!b) return; catFilter=b.dataset.cat; renderChips(); renderGrid(); });
+$("prices").addEventListener("click",e=>{ const b=e.target.closest("[data-price]"); if(b) add(PRICE_NO+Number(b.dataset.price)); });
+window.addEventListener("resize",()=>{ if(!S.size && tab==="reg") renderGrid(); });
 $("grid").addEventListener("click",e=>{
   // 売り切れのあとで欲しかった人（販売機会ロス）は、販売メモに1人ずつ足す
   const w=e.target.closest("[data-want]"); if(w){ addWant(Number(w.dataset.want)); return; }
@@ -933,17 +1056,40 @@ $("v-zan").addEventListener("click",e=>{
   const cf=t.closest("[data-cf]"); if(cf){ const fn=pendingConfirm; pendingConfirm=null; t.closest(".confirm").remove(); if(cf.dataset.cf==="yes"&&fn) fn(); }
 });
 function menuRowName(no){ const m=item(no); return m?m.name:null; }
+// よみ：自動で出るよみと同じか空欄なら、覚えない
+function setYomi(nm, y){ y=String(y||"").trim(); if(!y || y===autoYomi(nm)) delete S.yomi[nm]; else S.yomi[nm]=y; }
+function moveYomi(from, to){ if(S.yomi[from]){ S.yomi[to]=S.yomi[from]; delete S.yomi[from]; } }
 $("v-menu").addEventListener("change",e=>{
+  if(e.target.id==="p-list"){ S.prices=e.target.value.trim(); save(); renderMenu(); return; }
+  const xr=e.target.closest("tr[data-ex]");
+  if(xr){ const x=S.extra.find(x=>x.no===Number(xr.dataset.ex)), f=e.target.dataset.xf; if(!x) return;
+    if(f==="on") x.on=e.target.checked;
+    if(f==="price") x.price=Math.max(0,Number(e.target.value)||0);
+    if(f==="yomi") setYomi(x.name, e.target.value);
+    if(f==="name"){ const nn=e.target.value.trim(); if(nn){ moveYomi(x.name, nn); x.name=nn; } }
+    save(); return; }
   const tr=e.target.closest("tr[data-no]"); if(!tr) return; const no=Number(tr.dataset.no); const f=e.target.dataset.f; const nm=menuRowName(no); if(!nm) return;
-  const start = curMenu()[0].start; const row = S.menu.find(r=>r[0]===start && r[1]===no);
+  const start = menuFor(workDate())[0].start; const row = S.menu.find(r=>r[0]===start && r[1]===no);
   if(f==="show"){ if(e.target.checked) delete S.hidden[nm]; else S.hidden[nm]=true; }
   if(f==="cat") S.cats[nm]=e.target.value;
+  if(f==="yomi") setYomi(nm, e.target.value);
   if(f==="price" && row) row[3]=Math.max(0,Number(e.target.value)||0);
-  if(f==="name" && row){ const nn=e.target.value.trim(); if(nn){ if(S.cats[nm]){ S.cats[nn]=S.cats[nm]; } if(S.hidden[nm]){ S.hidden[nn]=true; delete S.hidden[nm]; } row[2]=nn; } }
+  if(f==="name" && row){ const nn=e.target.value.trim(); if(nn){ if(S.cats[nm]){ S.cats[nn]=S.cats[nm]; } if(S.hidden[nm]){ S.hidden[nn]=true; delete S.hidden[nm]; } moveYomi(nm, nn); row[2]=nn; } }
   save();
 });
+function addExtra(){
+  const n=$("x-name").value.trim(), p=Number(String($("x-price").value).normalize("NFKC").replace(/[^\d]/g,"")), y=$("x-yomi").value.trim();
+  if(!n || !(p>0)){ toast("品名と値段を入れてください"); return; }
+  const no=Math.max(EXTRA_NO, ...S.extra.map(x=>x.no))+1;
+  S.extra.push({no, name:n, price:p, on:true}); if(y) setYomi(n, y); save(); renderMenu(); toast(n+"（"+yen(p)+"）を足しました。レジの「イベント」に出ます");
+}
 $("v-menu").addEventListener("click",e=>{
   const t=e.target;
+  const so=t.closest("[data-sort]"), sz=t.closest("[data-size]"), pbb=t.closest("[data-pb]");
+  if(so||sz||pbb){ if(so) S.sort=so.dataset.sort; if(sz) S.size=sz.dataset.size; if(pbb) S.priceBtns=pbb.dataset.pb==="on"; save(); renderMenu(); toast("変えました。レジの画面で確かめてください"); return; }
+  if(t.id==="x-add"){ addExtra(); return; }
+  const xd=t.closest("[data-xdel]"); if(xd){ const x=S.extra.find(x=>x.no===Number(xd.dataset.xdel));
+    if(x) askConfirm(`「${esc(x.name)}」を消しますか？（売上の記録は残ります。また使うなら「出す」を外すだけにしてください）`, ()=>{ S.extra=S.extra.filter(y=>y!==x); save(); renderMenu(); toast("消しました"); }); return; }
   if(t.id==="m-import") importMenu();
   if(t.id==="m-reset") askConfirm("最初のメニューに戻しますか？（直した値段や名前も元に戻ります）", ()=>{ S.menu=DEFAULT_MENU.map(r=>r.slice()); S.cats={}; S.hidden={}; save(); renderMenu(); toast("最初のメニューに戻しました"); });
   if(t.id==="r-import") importRoster();
