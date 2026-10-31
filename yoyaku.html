@@ -313,14 +313,24 @@ function onField(e){
 document.addEventListener("input", onField);
 document.addEventListener("change", onField);
 
-// 前に読んだメニューをすぐに出し、裏で最新のメニューを読み直す（受け口は目を覚ますのに10秒ほどかかることがある）
+// 前に読んだメニュー、なければ写し（form.json・1時間ごとに自動で作り直す）をすぐに出し、
+// 裏で受け口から最新のメニューを読み直す（受け口は目を覚ますのに10〜20秒ほどかかることがある）
 const FKEY = KEY + "-form";
+const SNAP = "form.json";
+function okInfo(t){ try{ const i = JSON.parse(t); return i && Array.isArray(i.items) && i.accepting ? i : null; }catch(e){ return null; } }
+// 開いている間は受け口を起こしておく（送るときに待たないように）
+let pings = 0;
+const wake = setInterval(()=>{ if(++pings > 8){ clearInterval(wake); return; } if(API && !document.hidden) fetch(API).catch(()=>{}); }, 4*60*1000);
 async function load(){
   let shown = "";
-  try{ const c = localStorage.getItem(FKEY); if(c){ const info = JSON.parse(c); if(info && Array.isArray(info.items) && info.accepting){ build(info); render(); shown = c; } } }catch(e){}
+  try{ const c = localStorage.getItem(FKEY), i = c && okInfo(c); if(i){ build(i); render(); shown = c; } }catch(e){}
+  const live = API ? fetch(API).then(r=>r.text()) : Promise.reject(new Error("受け口のアドレスがまだ入っていません"));
+  live.catch(()=>{});
+  if(!shown){
+    try{ const t = await (await fetch(SNAP + "?v=" + Math.floor(Date.now()/600000), {cache:"no-cache"})).text(), i = okInfo(t); if(i){ build(i); render(); shown = t; } }catch(e){}
+  }
   try{
-    if(!API) throw new Error("受け口のアドレスがまだ入っていません");
-    const res = await fetch(API); const txt = await res.text(); const info = JSON.parse(txt);
+    const txt = await live; const info = JSON.parse(txt);
     if(!info || !Array.isArray(info.items)) throw new Error("メニューを読めませんでした");
     try{ localStorage.setItem(FKEY, txt); }catch(e){}
     if(!info.accepting){ $("app").innerHTML = `<div class="err">今は予約を受け付けていません。</div>`; $("bar").hidden = true; return; }
