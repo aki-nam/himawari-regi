@@ -1,1 +1,28 @@
-https://github.com/aki-nam/himawari-regi/edit/main/.github/workflows/form-snapshot.yml
+# らくらく予約（yoyaku.html）がすぐ開けるように、Googleフォームのメニューの写し form.json を1時間ごとに作り直す
+name: form snapshot
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 受け口からメニューを読む
+        run: |
+          curl -sSL --retry 3 --max-time 90 "https://script.google.com/macros/s/AKfycbwe43NaC-74opct2oFcT_eYghWVA6nsGdyosm4Av-7s6cR_Odaj2bOSpHBjZf5SbeaF/exec" -o form.new
+          # 正しく読めたときだけ使う（items が並んでいて、受付中かどうかが入っていること）
+          jq -e '(.items | type == "array" and length > 0) and has("accepting")' form.new > /dev/null
+          jq -c . form.new > form.json
+          rm form.new
+      - name: 変わっていたら保存する
+        run: |
+          if git diff --quiet -- form.json; then echo "変わりなし"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add form.json
+          git commit -m "Update form snapshot"
+          git push
