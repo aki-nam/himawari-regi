@@ -89,7 +89,7 @@ textarea{min-height:5.5em}
 </style></head><body>
 <div class="wrap">
   <h1><span class="dot" aria-hidden="true"></span>手作りパン工房 ひまわり　ご予約</h1>
-  <p class="note" id="lead">お届け日を選んで、パンを押してください（1回押すと1個）。</p>
+  <p class="note" id="lead">お届け日を選んで、パンを押してください（1回押すと1個）。<br>途中でやめるときは、そのまま画面を閉じてください（【予約する】を押すまで送られません）。</p>
   <div id="app"><div class="loading">メニューを読み込んでいます…<br><span class="note">はじめは10秒ほどかかることがあります。このままお待ちください。</span></div></div>
 </div>
 <div class="bar" id="bar" hidden>
@@ -223,7 +223,7 @@ function total(){ return breads.reduce((s,b)=>s+(cart[b.id]||0)*b.price,0); }
 function render(){
   if(step==="pick") renderPick(); else if(step==="info") renderInfo();
   const n=count(); $("cnt").textContent=n+"個"; $("tot").textContent=yen(total());
-  $("bar").hidden = step==="done";
+  $("bar").hidden = step==="done"; $("lead").hidden = step==="done";
   $("b-back").hidden = step!=="info";
   $("b-next").textContent = step==="pick" ? "次へ（お届け先）" : (sending ? "送っています…" : "予約する");
   $("b-next").disabled = sending || (step==="pick" && !n);
@@ -287,7 +287,7 @@ function renderInfo(){
     <h2>お届け先・お名前</h2>
     <div class="box fields">${dateField()}${shown.map(optField).join("")}
       ${fields.lineNote && recvIs(/LINE/)?`<div class="err"><b>${esc(fields.lineNote.title)}</b><p class="note" style="margin:4px 0 0">${esc(fields.lineNote.help)}</p></div>`:""}
-      <p class="note">お届け先・お名前・お届け時間・受け取り方法は、次から入れなくてよいように、このスマホに覚えます。</p></div>
+      <p class="note">お届け先・お名前・お届け時間・受け取り方法は、次から入れなくてよいように、このスマホに覚えます。<br>途中でやめるときは、そのまま画面を閉じてください（【予約する】を押すまで送られません）。</p></div>
     <div id="msgbox"></div>`;
 }
 function showErr(msg){ const b=$("msgbox"); if(b){ b.innerHTML=`<div class="err" role="alert" style="margin-top:12px">${msg}</div>`; b.scrollIntoView({block:"center"}); } }
