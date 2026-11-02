@@ -65,9 +65,10 @@ body.compact header .brand,body.compact header nav,body.compact #batchbar{displa
 .item .nm{font-family:var(--f-display);font-weight:800;font-size:1rem;line-height:1.3;word-break:break-word}
 .item .pr{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.95rem}
 .item[data-cat="イベント"]{background:var(--cat4)}
-/* 品名は1行（はみ出す分は…）。値段と残りは同じ行に */
-.item{min-width:0}
-.item .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 品名は1行。長い品名は fitNames() が字を小さくし、それでも入らないときだけ2行にする（ボタンの外へは出さない）。値段と残りは同じ行に */
+.item{min-width:0;max-width:100%}
+.item .nm{display:block;flex:none;width:100%;max-width:100%;white-space:nowrap;overflow:hidden}
+.item .nm.ml{line-height:1.15}
 .item .sub{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:0 6px}
 .grid .item{min-height:64px}
 .grid.sz-m .item{min-height:54px;padding:7px 8px 6px}
@@ -494,8 +495,35 @@ function renderGrid(){
       if(sort==="no") return btn; const h=gyoOf(m.yomi); if(h===last) return btn; last=h;
       return col ? `<div class="kgrp"><div class="kh">${h}</div>${btn}</div>` : `<div class="kh">${h}</div>${btn}`; }).join("")
     : `<div class="empty">表示するパンがありません。分類を「すべて」にするか、「設定」で表示をオンにしてください。</div>`;
-  renderPrices();
+  fitNames(); renderPrices();
 }
+// 品名がボタンの幅に入らないときは字を小さくする（2割まで）。それでも入らない品は2行（とても長い品は3行）に分ける。
+// 分ける所は「(」「【」の前など切りのいい所を選ぶ。改行は <br> で入れる（CSSの折り返しだと縦のあいうえお順でボタンが縦に伸びるため）
+const fitCtx=document.createElement("canvas").getContext("2d");
+function splitName(t, n, wd){
+  const good=i=>/[(（【\s]/.test(t[i])||/[)）】]/.test(t[i-1]);
+  const cost=parts=>Math.max(...parts.map(p=>wd(p.trim())))*(parts.every((p,k)=>k===0||good(t.length-parts.slice(k).join("").length))?1:1.4);
+  let best=[t], bc=wd(t);
+  if(n===2) for(let i=1;i<t.length;i++){ const p=[t.slice(0,i),t.slice(i)], c=cost(p); if(c<bc){ best=p; bc=c; } }
+  if(n===3) for(let i=1;i<t.length-1;i++) for(let j=i+1;j<t.length;j++){ const p=[t.slice(0,i),t.slice(i,j),t.slice(j)], c=cost(p); if(c<bc){ best=p; bc=c; } }
+  return {lines:best.map(p=>p.trim()), w:Math.max(...best.map(p=>wd(p.trim())))};
+}
+function fitNames(){
+  document.querySelectorAll("#grid .item .nm").forEach(el=>{
+    const t=el.textContent; el.textContent=t; el.style.fontSize=""; el.classList.remove("ml");
+    const w=el.clientWidth; if(!w || el.scrollWidth<=w+1) return;
+    const cs=getComputedStyle(el), base=parseFloat(cs.fontSize);
+    fitCtx.font=cs.fontWeight+" "+base+"px "+cs.fontFamily;
+    const memo={}, wd=s=>memo[s]??(memo[s]=fitCtx.measureText(s).width);
+    let r={lines:[t], w:wd(t)};
+    for(const n of [2,3]){ if(w/r.w>=.8) break; const s=splitName(t,n,wd); if(s.w<r.w) r=s; }
+    el.style.fontSize=(base*Math.min(1, w/r.w*.96)).toFixed(1)+"px";
+    if(r.lines.length>1){ el.classList.add("ml"); el.innerHTML=r.lines.map(esc).join("<br>"); }
+    // 念のため：実際の幅でまだはみ出すときは、その分だけ小さくする
+    if(el.scrollWidth>el.clientWidth+1) el.style.fontSize=(parseFloat(el.style.fontSize)*el.clientWidth/el.scrollWidth*.97).toFixed(1)+"px";
+  });
+}
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ if(tab==="reg") fitNames(); });
 function renderBar(){
   $("cnt").textContent = cartCount()+"点"; $("tot").textContent = yen(cartTotal());
   $("open").disabled = cartCount()===0; $("clear").disabled = cartCount()===0;
@@ -998,7 +1026,7 @@ $("chips").addEventListener("click",e=>{
   if(e.target.closest("[data-compact]")){ S.compact=!S.compact; save(); renderChips(); return; }
   const b=e.target.closest("button[data-cat]"); if(!b) return; catFilter=b.dataset.cat; renderChips(); renderGrid(); });
 $("prices").addEventListener("click",e=>{ const b=e.target.closest("[data-price]"); if(b) add(PRICE_NO+Number(b.dataset.price)); });
-window.addEventListener("resize",()=>{ if(!S.size && tab==="reg") renderGrid(); });
+window.addEventListener("resize",()=>{ if(tab==="reg"){ if(!S.size) renderGrid(); else fitNames(); } });
 $("grid").addEventListener("click",e=>{
   // 売り切れのあとで欲しかった人（販売機会ロス）は、販売メモに1人ずつ足す
   const w=e.target.closest("[data-want]"); if(w){ addWant(Number(w.dataset.want)); return; }
