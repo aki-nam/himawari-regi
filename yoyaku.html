@@ -76,6 +76,15 @@ textarea{min-height:5.5em}
 .notice{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--sun);border-radius:12px;padding:10px 12px;margin-bottom:12px;white-space:pre-line}
 .notice b{font-family:var(--f-display);display:block;margin-bottom:2px}
 .loading{padding:40px 0;text-align:center;color:var(--muted)}
+.wk{margin-top:10px;background:var(--cat3);border-radius:10px;padding:8px 12px}
+.wk b{font-family:var(--f-display)}
+.wk dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:4px 0 0}
+.wk dt{color:var(--muted);font-size:.9rem}.wk dd{margin:0;font-weight:700}
+.line .wkc{grid-column:1/-1;margin:-2px 0 2px;padding:8px 10px;border-radius:10px;background:var(--cat3)}
+.wkc .need{font-size:.9rem;font-weight:700;margin-bottom:4px}
+.wkc .need.ng{color:var(--danger)}
+.qty button:disabled{opacity:.35;cursor:default}
+.wkc .o{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0}
 @media (prefers-reduced-motion: reduce){.item{transition:none}}
 </style></head><body>
 <div class="wrap">
@@ -116,13 +125,16 @@ function catOf(n){
 
 let F = null;          // フォームの中身
 let breads = [], fields = [], notices = [], cart = {}, vals = {}, step = "pick", catFilter = "すべて", sending = false;
+let weekly = null, sandPick = {key:"", n:{}};   // 週替わりの中身（お届け日ごと）と、選んだサンドイッチの中身
 let mem = {}; try{ mem = JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){}
 function remember(){ try{ localStorage.setItem(KEY, JSON.stringify(mem)); }catch(e){} }
 
 /* ---------- フォームの質問を、パン（個数を選ぶ欄）とそのほかに分ける ---------- */
 function build(info){
-  F = info; breads = []; fields = []; notices = [];
+  F = info; breads = []; fields = []; notices = []; weekly = null;
   info.items.forEach(it=>{
+    // フォームの［週替わりメニュー（お届け日ごと）］（Excelのボタンで作った文を貼ったもの）
+    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /週替わり/.test(it.title) && /■/.test(it.help||"")){ weekly = parseWeekly(it.help); return; }
     // フォームの「タイトルと説明」で、タイトルが「お知らせ」で始まるものを、画面のいちばん上に出す
     if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /^[\s【\[「]*お知らせ/.test(it.title) && (it.help||"").trim()){
       notices.push({title:it.title.trim().replace(/^[【\[「]|[】\]」]$/g,""), help:it.help.trim()}); return; }
@@ -130,7 +142,7 @@ function build(info){
     const m = t.match(/^(.*?)\s*([0-9]{2,5})\s*円?$/);
     if(it.type==="LIST" && m && (it.choices||[]).some(c=>/^1$/.test(nk(c)))){
       const five = (it.choices||[]).find(c=>/5個以上/.test(nk(c)));
-      breads.push({id:it.id, name:m[1].trim(), price:Number(m[2]), help:nk(it.help), choices:it.choices, five, cat:catOf(m[1])});
+      breads.push({id:it.id, name:m[1].trim(), price:Number(m[2]), help:nk(it.help), choices:it.choices, five, cat:catOf(m[1]), wk:wkOf(m[1].trim())});
     } else if(["LIST","MULTIPLE_CHOICE","TEXT","PARAGRAPH_TEXT"].includes(it.type)){
       fields.push(Object.assign({}, it, {kind:kindOf(it)}));
     } else if(it.type==="SECTION_HEADER" && /LINE/.test(it.title) && /最初のメッセージ|送信/.test(it.title+it.help)){
@@ -150,6 +162,42 @@ function kindOf(it){
   return "other";
 }
 const fieldOf = k => fields.find(f=>f.kind===k);
+
+/* ---------- 週替わり（サンドイッチ・ピザパン・調理パン） ---------- */
+// 「■11月5日・6日（木・金）」の下に「サンドイッチ：A／B（どちらか1つ）」「ピザパン：…」「調理パン：…」
+function parseWeekly(text){
+  const W = {}; let cur = null;
+  nk(text).split(/\n/).forEach(l=>{
+    l = l.trim();
+    if(/^■/.test(l)){
+      const h = l.slice(1).replace(/\(.*$/,""), mo = Number((h.match(/(\d{1,2})月/)||[])[1]);
+      let ds = [...h.replace(/^.*?月/,"").matchAll(/(\d{1,2})日/g)].map(x=>Number(x[1]));
+      if(/[〜~]/.test(h) && ds.length===2){ const a=ds[0], b=ds[1]; ds=[]; for(let d=a; d<=b; d++) ds.push(d); }
+      cur = {label:l.slice(1), sand:[], pizza:"", chori:""};
+      if(mo) ds.forEach(d=>{ W[mo+"-"+d] = cur; });
+      return;
+    }
+    const m = cur && l.match(/^(サンドイッチ|ピザパン|ピザ|調理パン)\s*:\s*(.+)$/); if(!m) return;
+    const v = m[2].replace(/\(どちらか.*?\)/,"").trim(), none = /^(なし|―|-)$/.test(v);
+    if(m[1]==="サンドイッチ") cur.sand = none ? [] : v.split("/").map(s=>s.trim()).filter(Boolean);
+    else if(m[1]==="調理パン") cur.chori = none ? "" : v;
+    else cur.pizza = none ? "" : v;
+  });
+  return Object.keys(W).length ? W : null;
+}
+function wkOf(n){ return /サンドイッチ/.test(n) ? "sand" : /^調理パン$/.test(n) ? "chori" : /^ピザパン$/.test(n) ? "pizza" : ""; }
+function todayWk(){ const dt = chosenDate(); return weekly && dt ? (weekly[(dt.getMonth()+1)+"-"+dt.getDate()] || null) : null; }
+function wkText(b, w){ return !w ? "" : b.wk==="sand" ? (w.sand.length>1 ? w.sand.join("／")+"から選べます" : w.sand.join("")) : (w[b.wk]||""); }
+// サンドイッチの中身を選ぶ（2つから選べる日だけ）。お届け日で中身が変わったら選び直し
+function sandOpts(){ const w = todayWk(); return w && w.sand.length>1 ? w.sand : []; }
+function sandState(){
+  const o = sandOpts(), key = o.join("/");
+  if(sandPick.key!==key) sandPick = {key, n:{}};
+  const b = breads.find(x=>x.wk==="sand"), q = b ? (cart[b.id]||0) : 0;
+  let sum = o.reduce((s,k)=>s+(sandPick.n[k]||0),0);
+  for(let i=o.length-1; sum>q && i>=0; i--){ while(sum>q && sandPick.n[o[i]]>0){ sandPick.n[o[i]]--; sum--; } }
+  return {o, b, q, sum};
+}
 
 /* ---------- お届け日と、その日に頼めるパン ---------- */
 function dateOf(s){
@@ -191,14 +239,18 @@ function dateField(){
 function renderPick(){
   const dt = chosenDate();
   let list = breads.filter(b=>catFilter==="すべて"||b.cat===catFilter);
+  const w = todayWk();
   $("app").innerHTML = `${notices.map(n=>`<div class="notice" role="note"><b>${esc(n.title)}</b>${esc(n.help)}</div>`).join("")}
-    <div class="box">${dateField()}</div>
+    <div class="box">${dateField()}${weekly && dt ? (w ? `<div class="wk"><b>この日の週替わり</b><dl>
+        <dt>サンドイッチ</dt><dd>${esc(w.sand.join("／")||"なし")}${w.sand.length>1?`<span class="note">（どちらか1つ。次の画面で選びます）</span>`:""}</dd>
+        <dt>ピザパン</dt><dd>${esc(w.pizza||"なし")}</dd><dt>調理パン</dt><dd>${esc(w.chori||"なし")}</dd></dl></div>`
+      : `<div class="wk note">この日は、週替わりのパン（サンドイッチ・ピザパン・調理パン）はありません。</div>`) : ""}</div>
     <h2>パンを選ぶ</h2>
     <div class="chips">${["すべて",...CATS].map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("")}</div>
-    <div class="grid">${list.map(b=>{ const a=availability(b,dt), q=cart[b.id]||0;
+    <div class="grid">${list.map(b=>{ const a=availability(b,dt), q=cart[b.id]||0, wt=b.wk&&a.ok?wkText(b,w):"";
       return `<button type="button" class="item${a.ok?"":" off"}" data-add="${b.id}" data-cat="${b.cat}" ${a.ok?"":`aria-disabled="true"`}>
         <span class="nm">${esc(b.name)}</span><span class="pr">${yen(b.price)}</span>
-        ${b.help && !/^5個以上/.test(b.help)?`<span class="hp">${esc(a.ok?b.help:a.why)}</span>`:(a.ok?"":`<span class="hp">${esc(a.why)}</span>`)}
+        ${wt?`<span class="hp">${esc(wt)}</span>`:b.help && !/^5個以上/.test(b.help)?`<span class="hp">${esc(a.ok?b.help:a.why)}</span>`:(a.ok?"":`<span class="hp">${esc(a.why)}</span>`)}
         ${q?`<span class="badge">${q}</span>`:""}</button>`; }).join("")}</div>
     <p class="note">数をへらすときは「次へ」の画面で − を押します。5個以上もそのまま押せます（連絡欄に自動で書きます）。</p>`;
 }
@@ -223,10 +275,14 @@ function recvIs(re){ const r=fieldOf("recv"); return r && re.test(vals[r.id]||""
 function renderInfo(){
   const L = breads.filter(b=>cart[b.id]);
   const shown = fields.filter(f=>f.kind!=="date" && !(f.kind==="mail" && !recvIs(/メール/)) && !(f.kind==="line" && !recvIs(/LINE/)));
+  const w = todayWk(), S = sandState();
   $("app").innerHTML = `<h2>ご注文の内容</h2>
-    <div class="box"><div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}<small>${yen(b.price)}</small></div>
+    <div class="box"><div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}<small>${b.wk && b.wk!=="sand" && wkText(b,w)?esc(wkText(b,w))+"　":""}${yen(b.price)}</small></div>
        <div class="qty"><button type="button" data-dec="${b.id}" aria-label="${esc(b.name)}を1つへらす">−</button><span>${cart[b.id]}</span><button type="button" data-inc="${b.id}" aria-label="${esc(b.name)}を1つふやす">＋</button></div>
-       <div class="amt">${yen(b.price*cart[b.id])}</div></div>`).join("")}</div>
+       <div class="amt">${yen(b.price*cart[b.id])}</div>
+       ${b===S.b && S.o.length ? `<div class="wkc" role="group" aria-label="サンドイッチの中身">
+         <div class="need${S.sum<S.q?" ng":""}">${S.sum<S.q ? `中身を選んでください（あと${S.q-S.sum}個）` : "中身を選びました"}</div>
+         ${S.o.map((k,i)=>`<div class="o"><span>${esc(k)}</span><div class="qty"><button type="button" data-sdec="${i}" aria-label="${esc(k)}を1つへらす">−</button><span>${sandPick.n[k]||0}</span><button type="button" data-sinc="${i}" aria-label="${esc(k)}を1つふやす" ${S.sum>=S.q?"disabled":""}>＋</button></div></div>`).join("")}</div>` : ""}</div>`).join("")}</div>
      <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div></div>
     <h2>お届け先・お名前</h2>
     <div class="box fields">${dateField()}${shown.map(optField).join("")}
@@ -245,9 +301,16 @@ function collect(){
     const a=availability(b,dt); if(!a.ok) miss.push(`「${b.name}」は${a.why}です。数を0にするか、お届け日を変えてください`);
     if(q>=5){ ans[b.id]=b.five||"5個以上"; extra.push(`${b.name} ${q}個`); }
     else ans[b.id]=(b.choices.find(c=>nk(c)===String(q))||String(q)); });
+  // サンドイッチの中身（2つから選べる日）を連絡欄に書く
+  const S = sandState(); let sand = "";
+  if(S.o.length && S.q){
+    if(S.sum<S.q) miss.push(`手作りサンドイッチの中身（${S.o.join("／")}）を、あと${S.q-S.sum}個選んでください`);
+    else sand = "【サンドイッチ】" + S.o.filter(k=>sandPick.n[k]).map(k=>k+sandPick.n[k]).join("・");
+  }
   fields.forEach(f=>{
     const hidden = (f.kind==="mail" && !recvIs(/メール/)) || (f.kind==="line" && !recvIs(/LINE/));
     let v = hidden ? "" : answerOf(f);
+    if(f.kind==="msg" && sand) v = (v?v+"\n":"") + sand;
     if(f.kind==="msg" && extra.length) v = (v?v+"\n":"") + "【5個以上の数】" + extra.join("、");
     // どちらの予約から来たか事務所で分かるように、連絡欄の頭に印を付ける
     if(f.kind==="msg") v = "（らくらく予約）" + (v?"\n"+v:"");
@@ -277,11 +340,12 @@ async function send(){
 }
 function renderDone(ans){
   const L = breads.filter(b=>cart[b.id]), name = fields.filter(f=>f.kind==="other" && /お名前/.test(f.title)).map(answerOf).join("");
-  const df = fieldOf("date"), when = df ? answerOf(df) : "";
+  const df = fieldOf("date"), when = df ? answerOf(df) : "", w = todayWk(), S = sandState();
+  const sub = b => b===S.b && S.o.length ? S.o.filter(k=>sandPick.n[k]).map(k=>k+" "+sandPick.n[k]+"個").join("・") : (b.wk ? wkText(b,w) : "");
   $("app").innerHTML = `<div class="box done">
      <h2 style="margin-top:0">ご予約を受け付けました</h2>
      <p>${esc(when)}　${esc(name)} 様</p>
-     <div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}</div><div>${cart[b.id]}個</div><div class="amt">${yen(b.price*cart[b.id])}</div></div>`).join("")}</div>
+     <div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}${sub(b)?`<small>${esc(sub(b))}</small>`:""}</div><div>${cart[b.id]}個</div><div class="amt">${yen(b.price*cart[b.id])}</div></div>`).join("")}</div>
      <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div>
      <p class="note">この画面を残しておくときは、スクリーンショットを撮ってください。明細は、選んだ方法（メール／LINE）でお送りします。</p>
      ${recvIs(/LINE/) && !IN_LINE?`<div style="margin-top:10px"><a class="btn primary" href="${LINE_ADD}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">LINEを開いて ひまわりを友だち追加</a>
@@ -289,7 +353,7 @@ function renderDone(ans){
      ${fields.lineNote && recvIs(/LINE/)?`<div class="err"><b>${esc(fields.lineNote.title)}</b><p class="note" style="margin:4px 0 0">${esc(fields.lineNote.help)}</p></div>`:""}
    </div>
    <div class="row" style="margin-top:12px"><button class="btn" type="button" id="b-again">ほかの日も予約する</button></div>`;
-  step = "done"; sending = false; cart = {}; render();
+  step = "done"; sending = false; cart = {}; sandPick = {key:"", n:{}}; render();
 }
 
 /* ---------- 操作 ---------- */
@@ -300,6 +364,11 @@ document.addEventListener("click", e=>{
   const inc = t.closest("[data-inc]"), dec = t.closest("[data-dec]");
   if(inc){ cart[inc.dataset.inc]++; render(); return; }
   if(dec){ const k=dec.dataset.dec; cart[k]--; if(cart[k]<=0) delete cart[k]; if(!count()){ step="pick"; } render(); return; }
+  const si = t.closest("[data-sinc]"), sd = t.closest("[data-sdec]");
+  if(si||sd){ const S=sandState(), k=S.o[Number((si||sd).dataset[si?"sinc":"sdec"])]; if(k==null) return;
+    if(si && S.sum<S.q) sandPick.n[k]=(sandPick.n[k]||0)+1;
+    if(sd && sandPick.n[k]>0) sandPick.n[k]--;
+    render(); return; }
   if(t.id==="b-next"){ if(step==="pick"){ step="info"; render(); window.scrollTo(0,0); } else send(); }
   if(t.id==="b-back"){ step="pick"; render(); window.scrollTo(0,0); }
   if(t.id==="b-again"){ step="pick"; const df=fieldOf("date"); if(df){ delete vals[df.id]; } render(); window.scrollTo(0,0); }
