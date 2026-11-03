@@ -956,7 +956,7 @@ function renderMenu(){
      <td><select id="ct-${m.no}" data-f="cat" aria-label="分類">${CATS.map(c=>`<option ${c===m.cat?"selected":""}>${c}</option>`).join("")}</select></td></tr>`).join("")}
    </tbody></table></div>
    <h2>メニューを入れ替える（毎月）</h2>
-   <p class="note">発注_統合_v2 の［メニューマスタ］で、新しい月の行（適用開始日・番号・商品名・単価の4列）を選んでコピーし、下に貼り付けて「メニューを足す」。同じ月の分は入れ替わります。番号は納品明細のQRと同じ番号です。</p>
+   <p class="note">ふだんは何もしなくてよいです。事務所で 週替わりFAX注文書_かんたん の【ほかのファイルにそろえる】をして menu.json を GitHub に上げると、次にこのアプリを開いたときに新しいメニューが自動で入ります。<br>すぐに入れたいときは、発注_統合_v2 の［メニューマスタ］で、新しい月の行（適用開始日・番号・商品名・単価の4列）を選んでコピーし、下に貼り付けて「メニューを足す」。同じ月の分は入れ替わります。番号は納品明細のQRと同じ番号です。</p>
    <textarea id="m-paste" placeholder="2026/12/1	1	こしあんぱん	180"></textarea>
    <div class="row" style="margin-top:8px"><button class="btn" type="button" id="m-import">メニューを足す</button><button class="btn" type="button" id="m-reset">最初のメニューに戻す</button></div>
    <h2>名簿（お名前の候補）</h2>
@@ -1143,6 +1143,18 @@ if(!S.nnMigrated){ S.sales.forEach(s=>rememberName(s.place, s.buyer)); S.nnMigra
 readHash();
 $("place").value=S.place||"";
 show("reg");
+
+// 事務所の［メニュー］から作った menu.json（GitHub に上げたもの）を読む。新しい版のときだけ、その月のメニューを入れかえる
+fetch("menu.json?t="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>{
+  if(!j || !Array.isArray(j.menu) || !j.ver || j.ver===S.menuVer) return;
+  const rows=j.menu.filter(r=>Array.isArray(r) && r.length>=4 && Number(r[1])>0 && r[2] && Number(r[3])>0)
+                   .map(r=>[String(r[0]), Number(r[1]), String(r[2]).trim(), Number(r[3])]);
+  if(!rows.length) return;
+  const months=new Set(rows.map(r=>toTime(r[0])));
+  S.menu=S.menu.filter(r=>!months.has(toTime(r[0]))).concat(rows); S.menuVer=j.ver; save();
+  if(tab==="reg") renderGrid(); else if(tab==="menu") renderMenu();
+  toast("メニューを新しくしました（"+j.ver.slice(0,10)+"）");
+}).catch(()=>{});
 })();
 </script>
 
