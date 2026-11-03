@@ -125,16 +125,16 @@ function catOf(n){
 
 let F = null;          // フォームの中身
 let breads = [], fields = [], notices = [], cart = {}, vals = {}, step = "pick", catFilter = "すべて", sending = false;
-let weekly = null, sandPick = {key:"", n:{}};   // 週替わりの中身（お届け日ごと）と、選んだサンドイッチの中身
+let weekly = null, kineya = {}, sandPick = {key:"", n:{}};   // 週替わりの中身（お届け日ごと）と、選んだサンドイッチの中身
 let mem = {}; try{ mem = JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){}
 function remember(){ try{ localStorage.setItem(KEY, JSON.stringify(mem)); }catch(e){} }
 
 /* ---------- フォームの質問を、パン（個数を選ぶ欄）とそのほかに分ける ---------- */
 function build(info){
-  F = info; breads = []; fields = []; notices = []; weekly = null;
+  F = info; breads = []; fields = []; notices = []; weekly = null; kineya = {};
   info.items.forEach(it=>{
     // フォームの［週替わりメニュー（お届け日ごと）］（Excelのボタンで作った文を貼ったもの）
-    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /週替わり/.test(it.title) && /■/.test(it.help||"")){ weekly = parseWeekly(it.help); return; }
+    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /週替わり/.test(it.title) && /■/.test(it.help||"")){ weekly = parseWeekly(it.help); kineya = parseKineya(it.help); return; }
     // フォームの「タイトルと説明」で、タイトルが「お知らせ」で始まるものを、画面のいちばん上に出す
     if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /^[\s【\[「]*お知らせ/.test(it.title) && (it.help||"").trim()){
       notices.push({title:it.title.trim().replace(/^[【\[「]|[】\]」]$/g,""), help:it.help.trim()}); return; }
@@ -185,6 +185,17 @@ function parseWeekly(text){
   });
   return Object.keys(W).length ? W : null;
 }
+// 「◆喜ね舎の出店日：11月28日（土）」→ その日は食パン・ドーナツを予約できない
+function parseKineya(text){
+  const K = {};
+  nk(text).split(/\n/).forEach(l=>{
+    if(!/^\s*◆.*喜ね舎/.test(l)) return;
+    let mo = 0;
+    for(const x of l.replace(/\(.*?\)/g,"").matchAll(/(?:(\d{1,2})月)?(\d{1,2})日/g)){ if(x[1]) mo = Number(x[1]); if(mo) K[mo+"-"+Number(x[2])] = true; }
+  });
+  return K;
+}
+const isKineya = dt => !!(dt && kineya[(dt.getMonth()+1)+"-"+dt.getDate()]);
 function wkOf(n){ return /サンドイッチ/.test(n) ? "sand" : /^調理パン$/.test(n) ? "chori" : /^ピザパン$/.test(n) ? "pizza" : ""; }
 function todayWk(){ const dt = chosenDate(); return weekly && dt ? (weekly[(dt.getMonth()+1)+"-"+dt.getDate()] || null) : null; }
 function wkText(b, w){ return !w ? "" : b.wk==="sand" ? (w.sand.length>1 ? w.sand.join("／")+"から選べます" : w.sand.join("")) : (w[b.wk]||""); }
@@ -210,6 +221,7 @@ function chosenDate(){ const f=fieldOf("date"); if(!f) return null; const v=vals
 // 説明の「10月中のお届けのみ」「11月1日からのお届け」を読む
 function availability(b, dt){
   if(!dt) return {ok:true};
+  if(isKineya(dt) && /食パン|ドーナツ/.test(b.name)) return {ok:false, why:"喜ね舎の出店日はお休み"};
   let m = b.help.match(/(\d{1,2})月中のお届けのみ/);
   if(m && dt.getMonth()+1!==Number(m[1])) return {ok:false, why:m[1]+"月中のお届けのみ"};
   m = b.help.match(/(\d{1,2})月(\d{1,2})日から/);
@@ -244,7 +256,8 @@ function renderPick(){
     <div class="box">${dateField()}${weekly && dt ? (w ? `<div class="wk"><b>この日の週替わり</b><dl>
         <dt>サンドイッチ</dt><dd>${esc(w.sand.join("／")||"なし")}${w.sand.length>1?`<span class="note">（どちらか1つ。次の画面で選びます）</span>`:""}</dd>
         <dt>ピザパン</dt><dd>${esc(w.pizza||"なし")}</dd><dt>調理パン</dt><dd>${esc(w.chori||"なし")}</dd></dl></div>`
-      : `<div class="wk note">この日は、週替わりのパン（サンドイッチ・ピザパン・調理パン）はありません。</div>`) : ""}</div>
+      : isKineya(dt) ? "" : `<div class="wk note">この日は、週替わりのパン（サンドイッチ・ピザパン・調理パン）はありません。</div>`) : ""}
+      ${isKineya(dt) ? `<div class="wk"><b>この日は喜ね舎でのパン販売です</b><br>お受け取りは喜ね舎の会場で、午前中です。お届け先は「その他」を選んで「喜ね舎で受け取り」と書いてください。食パン・ドーナツは、この日はご予約できません。</div>` : ""}</div>
     <h2>パンを選ぶ</h2>
     <div class="chips">${["すべて",...CATS].map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("")}</div>
     <div class="grid">${list.map(b=>{ const a=availability(b,dt), q=cart[b.id]||0, wt=b.wk&&a.ok?wkText(b,w):"";
