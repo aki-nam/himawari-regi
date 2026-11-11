@@ -430,8 +430,8 @@ function optField(f){
       ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="例：9:30ごろ" style="margin-top:6px" aria-label="お届け時間">`:""}</div>`;
   }
   const v = vals[f.id]||"";
-  // 連絡欄：サンドイッチの中身は前の画面で選ぶので、「サンドイッチの選択名」はこの画面では見せない（フォームの文はそのまま）
-  const title = esc((f.kind==="msg" ? f.title.replace(/サンドイッチの選択名[・、]?/g,"") : f.title).trim()), req = f.required?`<span class="req">必須</span>`:"";
+  // 連絡欄：サンドイッチの中身は前の画面で選び、5個以上の数は自動で書くので、その2つはこの画面では見せない（フォームの文はそのまま）
+  const title = esc((f.kind==="msg" ? f.title.replace(/サンドイッチの選択名[・、]?/g,"").replace(/個数が[5５]個以上の場合の数量記入[・、]?/g,"") : f.title).trim()), req = f.required?`<span class="req">必須</span>`:"";
   if(f.type==="MULTIPLE_CHOICE") return `<div><span class="q" style="font-weight:700">${title}${req}</span>
       ${f.help?`<p class="note" style="margin:2px 0 6px">${esc(f.help)}</p>`:""}
       <div class="opt" role="radiogroup" aria-label="${title}">${(f.choices||[]).map(c=>`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="${esc(c)}" ${c===v?"checked":""}><span>${esc(c)}</span></label>`).join("")}
