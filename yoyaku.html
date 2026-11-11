@@ -326,6 +326,8 @@ function render(){
 function dateField(){
   const f = fieldOf("date"); if(!f) return "";
   const v = vals[f.id]||"", s = destSel(), ch = dateChoices();
+  // お届け先が決まるまでは、お届け日を出さない（事業所によって選べる日が違うため）
+  if(fieldOf("dest") && (!s || !s.label || destEdit)) return `<div><span class="q" style="font-weight:700">お届け日</span><p class="note" style="margin:4px 0 0">お届け先を選ぶと、お届けできる日が出ます。</p></div>`;
   const fixed = s && ((s.kind==="office" && !s.office.flex && Object.keys(s.office.days).length) || s.kind==="kineya");
   const lbl = c => { const d = dateOf(c); return d ? (d.getMonth()+1)+"/"+d.getDate()+"（"+"日月火水木金土"[d.getDay()]+"）" : c; };
   // 事業所を選んだときは、その事業所のお届け日だけをボタンで出す
@@ -481,8 +483,16 @@ document.addEventListener("click", e=>{
 });
 function onField(e){
   const id = e.target.id;
-  if(id==="dest-q"){ destQ = e.target.value; const s=$("dest-sel"); if(s) s.innerHTML = destOptions(); return; }
-  if(id==="dest-free"){ const f=fieldOf("dest"); if(f){ vals[f.id]="__other"; vals[f.id+"_o"]=e.target.value; destFree = true; } if(e.type==="change"){ destEdit = !e.target.value.trim(); render(); } return; }
+  if(id==="dest-q"){
+    destQ = e.target.value; const s=$("dest-sel"); if(s) s.innerHTML = destOptions();
+    // しぼって1つになったら、その事業所に決める
+    const q = nk(destQ).replace(/\s/g,""), hit = q ? offices.filter(o=>o.key.includes(q)) : [];
+    if(hit.length===1){ setDest("office", hit[0].name); destEdit = false; destQ = ""; render(); }
+    return; }
+  if(id==="dest-free"){
+    const f=fieldOf("dest"); if(f){ vals[f.id]="__other"; vals[f.id+"_o"]=e.target.value; destFree = true; }
+    if(e.type==="change"){ const of = officeOf(e.target.value); if(of) setDest("office", of.name); else setDest("free", e.target.value); destEdit = !e.target.value.trim(); render(); }
+    return; }
   if(id==="dest-sel" && e.type==="change"){
     const v = e.target.value;
     if(v.startsWith("o:")){ setDest("office", v.slice(2)); destEdit = false; }
