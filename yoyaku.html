@@ -133,15 +133,16 @@ let breads = [], fields = [], notices = [], cart = {}, vals = {}, step = "pick",
 let weekly = null, kineya = {}, sandPick = {key:"", n:{}};   // 週替わりの中身（お届け日ごと）と、選んだサンドイッチの中身
 let offices = [], destEdit = false, destFree = false, destQ = "", dateMode = "", dateReason = "";  // dateMode: late=締め切り後の取り置き / other=決まった日以外  // 事業所ごとのお届け日・お届け先を選び直し中か
 const KINEYA_DEST = "喜ね舎で受け取り";
+let holi = {};   // お休みの日（"11-23": true）
 let mem = {}; try{ mem = JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){}
 function remember(){ try{ localStorage.setItem(KEY, JSON.stringify(mem)); }catch(e){} }
 
 /* ---------- フォームの質問を、パン（個数を選ぶ欄）とそのほかに分ける ---------- */
 function build(info){
-  F = info; breads = []; fields = []; notices = []; weekly = null; kineya = {}; offices = [];
+  F = info; breads = []; fields = []; notices = []; weekly = null; kineya = {}; offices = []; holi = {};
   info.items.forEach(it=>{
     // フォームの［週替わりメニュー（お届け日ごと）］（Excelのボタンで作った文を貼ったもの）
-    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /週替わり/.test(it.title) && /[■▽]/.test(it.help||"")){ weekly = parseWeekly(it.help); kineya = parseKineya(it.help); offices = parseOffices(it.help); return; }
+    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /週替わり/.test(it.title) && /[■▽]/.test(it.help||"")){ weekly = parseWeekly(it.help); kineya = parseKineya(it.help); offices = parseOffices(it.help); holi = parseHolidays(it.help); return; }
     // フォームの「タイトルと説明」で、タイトルが「お知らせ」で始まるものを、画面のいちばん上に出す
     if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /^[\s【\[「]*お知らせ/.test(it.title) && (it.help||"").trim()){
       notices.push({title:it.title.trim().replace(/^[【\[「]|[】\]」]$/g,""), help:it.help.trim()}); return; }
@@ -240,7 +241,8 @@ function setDest(kind, value){
   else if(kind==="clear"){ delete vals[f.id]; delete vals[f.id+"_o"]; }
   else { vals[f.id] = "__other"; vals[f.id+"_o"] = kind==="kineya" ? KINEYA_DEST : value; }
   // お届け先が変わって、選んでいた日がその事業所の日でなくなったら、日を選び直してもらう
-  const df = fieldOf("date"); if(df && vals[df.id] && !dateChoices().includes(vals[df.id])){ delete vals[df.id]; delete vals[df.id+"_o"]; }
+  const df = fieldOf("date"), cd = df && vals[df.id] ? chosenDate() : null;
+  if(df && vals[df.id] && !(cd && dateChoices().some(c=>sameDay(c, cd)))){ delete vals[df.id]; delete vals[df.id+"_o"]; }
 }
 // 入れた文字で始まる（2文字からは、途中に入っていても）事業所だけを候補に出す。一覧そのものは見せない
 function destCands(){
@@ -271,32 +273,48 @@ function commitDestName(){
   const q = destQ.trim(); if(!q) return false;
   const of = officeOf(q); setDest(of ? "office" : "free", of ? of.name : q); destEdit = false; destQ = ""; return true;
 }
-// 選んだ事業所の、これから先のいちばん近いお届け日（「12/10（木）」）
-function nextDay(s){
-  const on = s.kind==="office" ? s.office.days : kineya, now = new Date(); now.setHours(0,0,0,0);
-  // 予約できる日（フォームの日）の最後より後の日だけ（それより前の日は、もう締め切りを過ぎている）
-  const f = fieldOf("date"), last = Math.max(now, ...((f&&f.choices)||[]).map(dateOf).filter(Boolean));
-  const ds = Object.keys(on).map(k=>{ const [mo,d] = k.split("-").map(Number); const dt = new Date(now.getFullYear(), mo-1, d); if(dt < now - 180*86400000) dt.setFullYear(dt.getFullYear()+1); return dt; }).filter(dt=>dt > last).sort((a,b)=>a-b);
-  return ds.length ? (ds[0].getMonth()+1)+"/"+ds[0].getDate()+"（"+"日月火水木金土"[ds[0].getDay()]+"）" : "";
+/* ---------- 予約の締め切り ----------
+   お客さまへの案内は「4日前（営業日）まで」のまま。システムの締め切りは、少しゆとりをもって「3日前（営業日）」。
+   営業日は、土日と「◇お休み（11月）：11月3日・23日」（祝日・園の休み・休業日。Excelのボタンで作る文）をよけて数える */
+const DEADLINE_DAYS = 3;
+const keyOf = d => (d.getMonth()+1)+"-"+d.getDate();
+const today0 = () => { const n = new Date(); n.setHours(0,0,0,0); return n; };
+function dayOfKey(k){ const now = today0(), [mo,d] = k.split("-").map(Number), dt = new Date(now.getFullYear(), mo-1, d); if(dt < now - 180*86400000) dt.setFullYear(dt.getFullYear()+1); return dt; }
+function parseHolidays(text){
+  const H = {};
+  nk(text).split(/\n/).forEach(l=>{ if(!/^\s*◇\s*お休み/.test(l)) return; let mo = 0;
+    for(const x of l.replace(/^[^:]*:/,"").matchAll(/(?:(\d{1,2})月)?(\d{1,2})日/g)){ if(x[1]) mo = Number(x[1]); if(mo) H[mo+"-"+Number(x[2])] = true; } });
+  return H;
 }
-// 締め切りを過ぎたけれど、まだ来ていない、その事業所の日（明日から。取り置きのご依頼に使う）
-function lateDays(s){
-  const f = fieldOf("date"), now = new Date(); now.setHours(0,0,0,0);
-  const on = s.kind==="office" ? s.office.days : kineya, open = {};
-  const cd = ((f&&f.choices)||[]).map(dateOf).filter(Boolean); cd.forEach(d=>{ open[(d.getMonth()+1)+"-"+d.getDate()] = true; });
-  const last = cd.length ? Math.max(...cd) : now.getTime() + 21*86400000;
-  return Object.keys(on).filter(k=>!open[k]).map(k=>{ const [mo,d] = k.split("-").map(Number); const dt = new Date(now.getFullYear(), mo-1, d); if(dt < now - 180*86400000) dt.setFullYear(dt.getFullYear()+1); return dt; })
-    .filter(dt=>dt > now && dt <= last).sort((a,b)=>a-b);
-}
+const isBiz = d => d.getDay()>0 && d.getDay()<6 && !holi[keyOf(d)];
+function canOrder(day){ const d = new Date(day); let n = 0; while(n < DEADLINE_DAYS){ d.setDate(d.getDate()-1); if(isBiz(d)) n++; } return today0() <= d; }
 const dLabel = d => (d.getMonth()+1)+"/"+d.getDate()+"（"+"日月火水木金土"[d.getDay()]+"）";
 const dText = d => (d.getMonth()+1)+"月"+d.getDate()+"日";
-// お届け日の選べる日（フォームの［納品希望日］の日のうち、選んだ事業所の日だけ）
+// フォームの［納品希望日］に同じ日があればその文字、なければ「12月4日」（フォームへは「その他」で送る）
+function valOfDay(d){ const f = fieldOf("date"); return ((f&&f.choices)||[]).find(c=>{ const x = dateOf(c); return x && keyOf(x)===keyOf(d); }) || dText(d); }
+const sameDay = (a, b) => { const x = dateOf(a), y = b instanceof Date ? b : dateOf(b); return !!(x && y && keyOf(x)===keyOf(y)); };
+function nextDay(){ return ""; }
+// 締め切りを過ぎたけれど、まだ来ていない、その事業所の日（明日から。取り置きのご依頼に使う）
+function lateDays(s){
+  const on = s.kind==="office" ? s.office.days : kineya, now = today0();
+  return Object.keys(on).map(dayOfKey).filter(dt=>dt > now && !canOrder(dt)).sort((a,b)=>a-b);
+}
+// 事業所が決まっていないときの日：フォームの日に、3日前の締め切りで間に合う日（火〜金の営業日）を足す
+function generalDays(){
+  const f = fieldOf("date"), all = ((f&&f.choices)||[]).filter(c=>dateOf(c)), out = [], now = today0();
+  const first = all.map(dateOf).sort((a,b)=>a-b)[0] || new Date(now.getTime() + 14*86400000);
+  for(let d = new Date(now.getTime() + 86400000); d < first; d.setDate(d.getDate()+1)){
+    if(d.getDay()>=2 && d.getDay()<=5 && isBiz(d) && canOrder(d)) out.push(dText(d)); }
+  return out.concat(all);
+}
+// お届け日の選べる日（選んだ事業所の日のうち、3日前の締め切りに間に合う日）
 function dateChoices(){
   const f = fieldOf("date"); if(!f) return [];
-  const s = destSel(), all = f.choices||[];
+  const s = destSel();
   const on = s && s.kind==="office" ? s.office.days : s && s.kind==="kineya" ? kineya : null;
-  if(!on || !Object.keys(on).length || (s.kind==="office" && s.office.flex)) return all;
-  return all.filter(c=>{ const d = dateOf(c); return d && on[(d.getMonth()+1)+"-"+d.getDate()]; });
+  if(!on || !Object.keys(on).length || (s.kind==="office" && s.office.flex)) return generalDays();
+  const now = today0();
+  return Object.keys(on).map(dayOfKey).filter(dt=>dt > now && canOrder(dt)).sort((a,b)=>a-b).map(valOfDay);
 }
 function wkOf(n){ return /サンドイッチ/.test(n) ? "sand" : /^調理パン$/.test(n) ? "chori" : /^ピザパン$/.test(n) ? "pizza" : ""; }
 function todayWk(){ const dt = chosenDate(); return weekly && dt ? (weekly[(dt.getMonth()+1)+"-"+dt.getDate()] || null) : null; }
@@ -358,13 +376,13 @@ function dateField(){
       <div class="wk">締め切りを過ぎた日は、<b>取り置き</b>のご依頼になります。販売日の前日までなら、持ち込む数の範囲でお取り置きします。ご依頼が持ち込む数をこえたときは、ご用意できないことがあります。ご容赦ください。</div>${back}</div>`; }
   // 決まった日以外（理由を書く）
   if(fixed && dateMode==="other") return `<div><label class="q" for="f-${f.id}">希望するお届け日<span class="req">必須</span></label>
-    <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${(f.choices||[]).filter(c=>dateOf(c)).map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}${f.other?`<option value="__other" ${v==="__other"?"selected":""}>その他（日付を書く）</option>`:""}</select>
+    <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${generalDays().map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}${f.other?`<option value="__other" ${v==="__other"?"selected":""}>その他（日付を書く）</option>`:""}</select>
     ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="例：11月21日" style="margin-top:6px" aria-label="お届け日">`:""}
     <label class="q" for="date-reason" style="margin-top:8px;display:block">決まった日以外を希望する理由<span class="req">必須</span></label>
     <textarea id="date-reason" placeholder="例：行事があるので、この日にお願いしたい">${esc(dateReason)}</textarea>
     <p class="note" style="margin:4px 0 0">お届けできるか、こちらで確かめてご連絡します。</p>${back}</div>`;
   if(fixed) return `<div><span class="q" style="font-weight:700">お届け日<span class="req">必須</span></span>
-    ${ch.length ? `<div class="dchips" role="group" aria-label="お届け日">${ch.map(c=>`<button type="button" data-date="${esc(c)}" aria-pressed="${c===v}">${esc(lbl(c))}</button>`).join("")}</div>
+    ${ch.length ? `<div class="dchips" role="group" aria-label="お届け日">${ch.map(c=>`<button type="button" data-date="${esc(c)}" aria-pressed="${!!(chosenDate() && sameDay(c, chosenDate()))}">${esc(lbl(c))}</button>`).join("")}</div>
       <p class="note" style="margin:4px 0 0">${esc(s.label)}のお届け日のうち、今から予約できる日です（締め切りはお届け日の4日前・営業日）。</p>`
     : `<p class="note" style="margin:4px 0 0">${esc(s.label)}の、今から予約できるお届け日がありません（締め切りはお届け日の4日前・営業日）。${nextDay(s)?`次のお届け日は<b>${esc(nextDay(s))}</b>です。予約の受付が始まるまで、少しお待ちください。`:""}</p>`}
     <div class="dchips" style="margin-top:8px">${lateDays(s).length?`<button type="button" data-dmode="late">締め切りを過ぎた日に取り置きをたのむ</button>`:""}<button type="button" data-dmode="other">決まった日以外を希望する</button></div></div>`;
@@ -533,7 +551,8 @@ document.addEventListener("click", e=>{
   if(t.id==="b-next" && $("dest-name") && destQ.trim()) commitDestName();
   const dm = t.closest("[data-dmode]"); if(dm){ dateMode = dm.dataset.dmode; dateReason = ""; const df=fieldOf("date"); if(df){ delete vals[df.id]; delete vals[df.id+"_o"]; } render(); return; }
   const lt = t.closest("[data-late]"); if(lt){ const df=fieldOf("date"); if(df){ vals[df.id]="__other"; vals[df.id+"_o"]=lt.dataset.late; } render(); return; }
-  const dc = t.closest("[data-date]"); if(dc){ const df=fieldOf("date"); if(df){ vals[df.id]=dc.dataset.date; delete vals[df.id+"_o"]; } render(); return; }
+  const dc = t.closest("[data-date]"); if(dc){ const df=fieldOf("date"); if(df){ const c = dc.dataset.date;
+    if((df.choices||[]).includes(c)){ vals[df.id]=c; delete vals[df.id+"_o"]; } else { vals[df.id]="__other"; vals[df.id+"_o"]=c; } } render(); return; }
   if(t.id==="b-next"){ if(step==="pick"){ step="info"; render(); window.scrollTo(0,0); } else send(); }
   if(t.id==="b-back"){ step="pick"; render(); window.scrollTo(0,0); }
   if(t.id==="b-again"){ step="pick"; dateMode=""; dateReason=""; const df=fieldOf("date"); if(df){ delete vals[df.id]; } render(); window.scrollTo(0,0); }
