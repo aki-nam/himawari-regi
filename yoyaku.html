@@ -76,6 +76,11 @@ textarea{min-height:5.5em}
 .notice{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--sun);border-radius:12px;padding:10px 12px;margin-bottom:12px;white-space:pre-line}
 .notice b{font-family:var(--f-display);display:block;margin-bottom:2px}
 .loading{padding:40px 0;text-align:center;color:var(--muted)}
+.dest{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.dest b{font-size:1.1rem}
+.dest button,.dchips button{font:inherit;font-size:.95rem;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.dchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.dchips button[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
 .wk{margin-top:10px;background:var(--cat3);border-radius:10px;padding:8px 12px}
 .wk b{font-family:var(--f-display)}
 .wk dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:4px 0 0}
@@ -126,15 +131,17 @@ function catOf(n){
 let F = null;          // フォームの中身
 let breads = [], fields = [], notices = [], cart = {}, vals = {}, step = "pick", catFilter = "すべて", sending = false;
 let weekly = null, kineya = {}, sandPick = {key:"", n:{}};   // 週替わりの中身（お届け日ごと）と、選んだサンドイッチの中身
+let offices = [], destEdit = false, destFree = false, destQ = "";  // 事業所ごとのお届け日・お届け先を選び直し中か
+const KINEYA_DEST = "喜ね舎で受け取り";
 let mem = {}; try{ mem = JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){}
 function remember(){ try{ localStorage.setItem(KEY, JSON.stringify(mem)); }catch(e){} }
 
 /* ---------- フォームの質問を、パン（個数を選ぶ欄）とそのほかに分ける ---------- */
 function build(info){
-  F = info; breads = []; fields = []; notices = []; weekly = null; kineya = {};
+  F = info; breads = []; fields = []; notices = []; weekly = null; kineya = {}; offices = [];
   info.items.forEach(it=>{
     // フォームの［週替わりメニュー（お届け日ごと）］（Excelのボタンで作った文を貼ったもの）
-    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /週替わり/.test(it.title) && /■/.test(it.help||"")){ weekly = parseWeekly(it.help); kineya = parseKineya(it.help); return; }
+    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /週替わり/.test(it.title) && /[■▽]/.test(it.help||"")){ weekly = parseWeekly(it.help); kineya = parseKineya(it.help); offices = parseOffices(it.help); return; }
     // フォームの「タイトルと説明」で、タイトルが「お知らせ」で始まるものを、画面のいちばん上に出す
     if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /^[\s【\[「]*お知らせ/.test(it.title) && (it.help||"").trim()){
       notices.push({title:it.title.trim().replace(/^[【\[「]|[】\]」]$/g,""), help:it.help.trim()}); return; }
@@ -155,6 +162,7 @@ function build(info){
 function kindOf(it){
   const t = it.title;
   if(/納品希望日|お届け日/.test(t)) return "date";
+  if(/お届け先/.test(t) && it.type==="MULTIPLE_CHOICE") return "dest";
   if(/連絡|メッセージ/.test(t) && it.type==="PARAGRAPH_TEXT") return "msg";
   if(/受け取り方法/.test(t)) return "recv";
   if(/メールアドレス/.test(t)) return "mail";
@@ -196,6 +204,81 @@ function parseKineya(text){
   return K;
 }
 const isKineya = dt => !!(dt && kineya[(dt.getMonth()+1)+"-"+dt.getDate()]);
+// 「▽福井コンピュータ：12月4日・11日・18日・25日」→ 事業所ごとのお届け日（同じ名前が何か月分あってもまとめる）
+function parseOffices(text){
+  const O = [], by = {};
+  String(text||"").split(/\n/).forEach(l=>{
+    const m = l.trim().match(/^▽\s*(.+?)\s*[：:]\s*(.+)$/); if(!m) return;
+    const name = m[1].replace(/\s+/g," ").trim(); let mo = 0;
+    if(!by[name]){ by[name] = {name, key:nk(name).replace(/\s/g,""), days:{}}; O.push(by[name]); }
+    // 「▽岡保公民館：日を選ぶ」のように日付がない事業所は、日が決まっていないので、どの日でも選べる
+    if(!/\d{1,2}日/.test(nk(m[2]))) by[name].flex = true;
+    for(const x of nk(m[2]).replace(/\(.*?\)/g,"").matchAll(/(?:(\d{1,2})月)?(\d{1,2})日/g)){ if(x[1]) mo = Number(x[1]); if(mo) by[name].days[mo+"-"+Number(x[2])] = true; }
+  });
+  return O;
+}
+const officeOf = name => { const k = nk(name).replace(/\s/g,""); return k ? offices.find(o=>o.key===k) : null; };
+const hasKineya = () => Object.keys(kineya).length > 0;
+
+/* ---------- お届け先（事業所を選ぶ → その事業所のお届け日だけ出す） ---------- */
+// いま選んでいるお届け先。フォームへは、事業所は「その他」の欄に名前を書いた形で送る
+function destSel(){
+  const f = fieldOf("dest"); if(!f) return null;
+  const v = vals[f.id]; if(!v) return null;
+  if(v!=="__other") return {kind:"pre", label:v};
+  const o = (vals[f.id+"_o"]||"").trim();
+  if(destFree) return {kind:"free", label:o};
+  if(o===KINEYA_DEST) return {kind:"kineya", label:"喜ね舎の会場で受け取る"};
+  const of = officeOf(o); if(of) return {kind:"office", label:of.name, office:of};
+  return o ? {kind:"free", label:o} : null;
+}
+function setDest(kind, value){
+  const f = fieldOf("dest"); if(!f) return;
+  destFree = kind==="free";
+  if(kind==="pre"){ vals[f.id] = value; delete vals[f.id+"_o"]; }
+  else if(kind==="clear"){ delete vals[f.id]; delete vals[f.id+"_o"]; }
+  else { vals[f.id] = "__other"; vals[f.id+"_o"] = kind==="kineya" ? KINEYA_DEST : value; }
+  // お届け先が変わって、選んでいた日がその事業所の日でなくなったら、日を選び直してもらう
+  const df = fieldOf("date"); if(df && vals[df.id] && !dateChoices().includes(vals[df.id])){ delete vals[df.id]; delete vals[df.id+"_o"]; }
+}
+function destOptions(){
+  const f = fieldOf("dest"), q = nk(destQ).replace(/\s/g,"");
+  const of = offices.filter(o=>!q || o.key.includes(q));
+  const s = destSel(), cur = !s ? "" : s.kind==="office" ? "o:"+s.office.name : s.kind==="pre" ? "p:"+s.label : s.kind;
+  const op = (v, t) => `<option value="${esc(v)}" ${v===cur?"selected":""}>${esc(t)}</option>`;
+  return `<option value="">選んでください</option>
+    ${of.length?`<optgroup label="事業所・会社">${of.map(o=>op("o:"+o.name, o.name)).join("")}</optgroup>`:""}
+    ${op("free", offices.length?"一覧にない事業所・お店（名前を書く）":"事業所・会社（名前を書く）")}
+    ${hasKineya()?`<optgroup label="喜ね舎の出店日">${op("kineya","喜ね舎の会場で受け取る")}</optgroup>`:""}
+    ${(f.choices||[]).length?`<optgroup label="あけぼの園・しみずの杜・コスモスの職員の方（前払い）">${f.choices.map(c=>op("p:"+c, c)).join("")}</optgroup>`:""}`;
+}
+function destBlock(){
+  const f = fieldOf("dest"); if(!f) return "";
+  const s = destSel();
+  if(s && s.label && !destEdit) return `<div class="dest" style="margin-bottom:10px"><div><span class="note">お届け先</span><br><b>${esc(s.label)}</b></div><button type="button" data-destedit="1">変える</button></div>`;
+  return `<div style="margin-bottom:10px"><label class="q" for="dest-sel">お届け先<span class="req">必須</span></label>
+    <p class="note" style="margin:0 0 4px">はじめの1回だけ選んでください。次からは、このスマホが覚えています。</p>
+    ${offices.length>8?`<input type="text" id="dest-q" value="${esc(destQ)}" placeholder="名前の一部を入れると、しぼれます（例：コンピュータ）" aria-label="事業所を名前でさがす" style="margin-bottom:6px">`:""}
+    <select id="dest-sel" aria-label="お届け先">${destOptions()}</select>
+    ${s && s.kind==="free" || destFree ? `<input type="text" id="dest-free" value="${esc(vals[f.id+"_o"]||"")}" placeholder="事業所・お店の名前" aria-label="お届け先の名前" style="margin-top:6px">
+      <p class="note" style="margin:4px 0 0">一覧にない事業所は、お届け日をこちらで確かめます。</p>` : ""}</div>`;
+}
+// 選んだ事業所の、これから先のいちばん近いお届け日（「12/10（木）」）
+function nextDay(s){
+  const on = s.kind==="office" ? s.office.days : kineya, now = new Date(); now.setHours(0,0,0,0);
+  // 予約できる日（フォームの日）の最後より後の日だけ（それより前の日は、もう締め切りを過ぎている）
+  const f = fieldOf("date"), last = Math.max(now, ...((f&&f.choices)||[]).map(dateOf).filter(Boolean));
+  const ds = Object.keys(on).map(k=>{ const [mo,d] = k.split("-").map(Number); const dt = new Date(now.getFullYear(), mo-1, d); if(dt < now - 180*86400000) dt.setFullYear(dt.getFullYear()+1); return dt; }).filter(dt=>dt > last).sort((a,b)=>a-b);
+  return ds.length ? (ds[0].getMonth()+1)+"/"+ds[0].getDate()+"（"+"日月火水木金土"[ds[0].getDay()]+"）" : "";
+}
+// お届け日の選べる日（フォームの［納品希望日］の日のうち、選んだ事業所の日だけ）
+function dateChoices(){
+  const f = fieldOf("date"); if(!f) return [];
+  const s = destSel(), all = f.choices||[];
+  const on = s && s.kind==="office" ? s.office.days : s && s.kind==="kineya" ? kineya : null;
+  if(!on || !Object.keys(on).length || (s.kind==="office" && s.office.flex)) return all;
+  return all.filter(c=>{ const d = dateOf(c); return d && on[(d.getMonth()+1)+"-"+d.getDate()]; });
+}
 function wkOf(n){ return /サンドイッチ/.test(n) ? "sand" : /^調理パン$/.test(n) ? "chori" : /^ピザパン$/.test(n) ? "pizza" : ""; }
 function todayWk(){ const dt = chosenDate(); return weekly && dt ? (weekly[(dt.getMonth()+1)+"-"+dt.getDate()] || null) : null; }
 function wkText(b, w){ return !w ? "" : b.wk==="sand" ? (w.sand.length>1 ? w.sand.join("／")+"から選べます" : w.sand.join("")) : (w[b.wk]||""); }
@@ -237,14 +320,21 @@ function render(){
   const n=count(); $("cnt").textContent=n+"個"; $("tot").textContent=yen(total());
   $("bar").hidden = step==="done"; $("lead").hidden = step==="done";
   $("b-back").hidden = step!=="info";
-  $("b-next").textContent = step==="pick" ? "次へ（お届け先）" : (sending ? "送っています…" : "予約する");
+  $("b-next").textContent = step==="pick" ? "次へ（お名前など）" : (sending ? "送っています…" : "予約する");
   $("b-next").disabled = sending || (step==="pick" && !n);
 }
 function dateField(){
   const f = fieldOf("date"); if(!f) return "";
-  const v = vals[f.id]||"";
+  const v = vals[f.id]||"", s = destSel(), ch = dateChoices();
+  const fixed = s && ((s.kind==="office" && !s.office.flex && Object.keys(s.office.days).length) || s.kind==="kineya");
+  const lbl = c => { const d = dateOf(c); return d ? (d.getMonth()+1)+"/"+d.getDate()+"（"+"日月火水木金土"[d.getDay()]+"）" : c; };
+  // 事業所を選んだときは、その事業所のお届け日だけをボタンで出す
+  if(fixed) return `<div><span class="q" style="font-weight:700">お届け日<span class="req">必須</span></span>
+    ${ch.length ? `<div class="dchips" role="group" aria-label="お届け日">${ch.map(c=>`<button type="button" data-date="${esc(c)}" aria-pressed="${c===v}">${esc(lbl(c))}</button>`).join("")}</div>
+      <p class="note" style="margin:4px 0 0">${esc(s.label)}のお届け日のうち、今から予約できる日です（締め切りはお届け日の4日前・営業日）。</p>`
+    : `<p class="note" style="margin:4px 0 0">${esc(s.label)}の、今から予約できるお届け日がありません（締め切りはお届け日の4日前・営業日）。${nextDay(s)?`次のお届け日は<b>${esc(nextDay(s))}</b>です。予約の受付が始まるまで、少しお待ちください。`:""}お急ぎのときは、お電話（0776-52-5575）でご相談ください。</p>`}</div>`;
   return `<div><label class="q" for="f-${f.id}">お届け日（納品希望日）<span class="req">必須</span></label>
-    <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${(f.choices||[]).map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}${f.other?`<option value="__other" ${v==="__other"?"selected":""}>その他（日付を書く）</option>`:""}</select>
+    <select id="f-${f.id}" data-f="${f.id}"><option value="">選んでください</option>${ch.map(c=>`<option ${c===v?"selected":""}>${esc(c)}</option>`).join("")}${f.other?`<option value="__other" ${v==="__other"?"selected":""}>その他（日付を書く）</option>`:""}</select>
     ${v==="__other"?`<input type="text" data-f="${f.id}_o" value="${esc(vals[f.id+"_o"]||"")}" placeholder="例：11月21日" style="margin-top:6px" aria-label="お届け日">`:""}
     ${f.help?`<p class="note" style="margin:4px 0 0">${esc(f.help)}</p>`:""}</div>`;
 }
@@ -253,11 +343,11 @@ function renderPick(){
   let list = breads.filter(b=>catFilter==="すべて"||b.cat===catFilter);
   const w = todayWk();
   $("app").innerHTML = `${notices.map(n=>`<div class="notice" role="note"><b>${esc(n.title)}</b>${esc(n.help)}</div>`).join("")}
-    <div class="box">${dateField()}${weekly && dt ? (w ? `<div class="wk"><b>この日の週替わり</b><dl>
+    <div class="box">${destBlock()}${dateField()}${weekly && dt ? (w ? `<div class="wk"><b>この日の週替わり</b><dl>
         <dt>サンドイッチ</dt><dd>${esc(w.sand.join("／")||"なし")}${w.sand.length>1?`<span class="note">（どちらか1つ。次の画面で選びます）</span>`:""}</dd>
         <dt>ピザパン</dt><dd>${esc(w.pizza||"なし")}</dd><dt>調理パン</dt><dd>${esc(w.chori||"なし")}</dd></dl></div>`
       : isKineya(dt) ? "" : `<div class="wk note">この日は、週替わりのパン（サンドイッチ・ピザパン・調理パン）はありません。</div>`) : ""}
-      ${isKineya(dt) ? `<div class="wk"><b>この日は喜ね舎でのパン販売です</b><br>お受け取りは喜ね舎の会場で、午前中です。お届け先は「その他」を選んで「喜ね舎で受け取り」と書いてください。食パン・ドーナツは、この日はご予約できません。</div>` : ""}</div>
+      ${isKineya(dt) ? `<div class="wk"><b>この日は喜ね舎でのパン販売です</b><br>お受け取りは喜ね舎の会場で、午前中です。会場で受け取るときは、お届け先で「喜ね舎の会場で受け取る」を選んでください。食パン・ドーナツは、この日はご予約できません。</div>` : ""}</div>
     <h2>パンを選ぶ</h2>
     <div class="chips">${["すべて",...CATS].map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("")}</div>
     <div class="grid">${list.map(b=>{ const a=availability(b,dt), q=cart[b.id]||0, wt=b.wk&&a.ok?wkText(b,w):"";
@@ -287,7 +377,7 @@ function optField(f){
 function recvIs(re){ const r=fieldOf("recv"); return r && re.test(vals[r.id]||""); }
 function renderInfo(){
   const L = breads.filter(b=>cart[b.id]);
-  const shown = fields.filter(f=>f.kind!=="date" && !(f.kind==="mail" && !recvIs(/メール/)) && !(f.kind==="line" && !recvIs(/LINE/)));
+  const shown = fields.filter(f=>f.kind!=="date" && f.kind!=="dest" && !(f.kind==="mail" && !recvIs(/メール/)) && !(f.kind==="line" && !recvIs(/LINE/)));
   const w = todayWk(), S = sandState();
   $("app").innerHTML = `<h2>ご注文の内容</h2>
     <div class="box"><div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}<small>${b.wk && b.wk!=="sand" && wkText(b,w)?esc(wkText(b,w))+"　":""}${yen(b.price)}</small></div>
@@ -298,7 +388,7 @@ function renderInfo(){
          ${S.o.map((k,i)=>`<div class="o"><span>${esc(k)}</span><div class="qty"><button type="button" data-sdec="${i}" aria-label="${esc(k)}を1つへらす">−</button><span>${sandPick.n[k]||0}</span><button type="button" data-sinc="${i}" aria-label="${esc(k)}を1つふやす" ${S.sum>=S.q?"disabled":""}>＋</button></div></div>`).join("")}</div>` : ""}</div>`).join("")}</div>
      <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div></div>
     <h2>お届け先・お名前</h2>
-    <div class="box fields">${dateField()}${shown.map(optField).join("")}
+    <div class="box fields"><div>${destBlock()}</div>${dateField()}${shown.map(optField).join("")}
       ${fields.lineNote && recvIs(/LINE/)?`<div class="err"><b>${esc(fields.lineNote.title)}</b><p class="note" style="margin:4px 0 0">${esc(fields.lineNote.help)}</p></div>`:""}
       <p class="note">お届け先・お名前・お届け時間・受け取り方法は、次から入れなくてよいように、このスマホに覚えます。<br>途中でやめるときは、そのまま画面を閉じてください（【予約する】を押すまで送られません）。</p></div>
     <div id="msgbox"></div>`;
@@ -333,6 +423,7 @@ function collect(){
   if(recvIs(/メール/) && fieldOf("mail") && !answerOf(fieldOf("mail"))) miss.push("明細をメールで受け取るときは、メールアドレスを入れてください");
   if(recvIs(/LINE/) && fieldOf("line") && !answerOf(fieldOf("line"))) miss.push("LINEで受け取るときは、LINEのお名前を入れてください");
   if(!count()) miss.push("パンを選んでください");
+  const ds = destSel(); if(fieldOf("dest") && (!ds || !ds.label) && !miss.some(x=>/お届け先/.test(x))) miss.push("「お届け先」を選んでください");
   return {ans, miss};
 }
 async function send(){
@@ -382,11 +473,25 @@ document.addEventListener("click", e=>{
     if(si && S.sum<S.q) sandPick.n[k]=(sandPick.n[k]||0)+1;
     if(sd && sandPick.n[k]>0) sandPick.n[k]--;
     render(); return; }
+  if(t.closest("[data-destedit]")){ destEdit = true; destQ = ""; render(); const s=$("dest-sel"); if(s) s.focus(); return; }
+  const dc = t.closest("[data-date]"); if(dc){ const df=fieldOf("date"); if(df){ vals[df.id]=dc.dataset.date; delete vals[df.id+"_o"]; } render(); return; }
   if(t.id==="b-next"){ if(step==="pick"){ step="info"; render(); window.scrollTo(0,0); } else send(); }
   if(t.id==="b-back"){ step="pick"; render(); window.scrollTo(0,0); }
   if(t.id==="b-again"){ step="pick"; const df=fieldOf("date"); if(df){ delete vals[df.id]; } render(); window.scrollTo(0,0); }
 });
 function onField(e){
+  const id = e.target.id;
+  if(id==="dest-q"){ destQ = e.target.value; const s=$("dest-sel"); if(s) s.innerHTML = destOptions(); return; }
+  if(id==="dest-free"){ const f=fieldOf("dest"); if(f){ vals[f.id]="__other"; vals[f.id+"_o"]=e.target.value; destFree = true; } if(e.type==="change"){ destEdit = !e.target.value.trim(); render(); } return; }
+  if(id==="dest-sel" && e.type==="change"){
+    const v = e.target.value;
+    if(v.startsWith("o:")){ setDest("office", v.slice(2)); destEdit = false; }
+    else if(v.startsWith("p:")){ setDest("pre", v.slice(2)); destEdit = false; }
+    else if(v==="kineya"){ setDest("kineya"); destEdit = false; }
+    else if(v==="free"){ setDest("free", ""); destEdit = true; }
+    else setDest("clear");
+    render(); if(v==="free"){ const x=$("dest-free"); if(x) x.focus(); } return;
+  }
   const k = e.target.dataset.f; if(!k) return;
   vals[k] = e.target.value;
   // 選び直したときは画面を描き直す（その他の欄・頼めるパン・メール/LINEの欄）
