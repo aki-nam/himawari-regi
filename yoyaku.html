@@ -241,27 +241,34 @@ function setDest(kind, value){
   // お届け先が変わって、選んでいた日がその事業所の日でなくなったら、日を選び直してもらう
   const df = fieldOf("date"); if(df && vals[df.id] && !dateChoices().includes(vals[df.id])){ delete vals[df.id]; delete vals[df.id+"_o"]; }
 }
-function destOptions(){
-  const f = fieldOf("dest"), q = nk(destQ).replace(/\s/g,"");
-  const of = offices.filter(o=>!q || o.key.includes(q));
-  const s = destSel(), cur = !s ? "" : s.kind==="office" ? "o:"+s.office.name : s.kind==="pre" ? "p:"+s.label : s.kind;
-  const op = (v, t) => `<option value="${esc(v)}" ${v===cur?"selected":""}>${esc(t)}</option>`;
-  return `<option value="">選んでください</option>
-    ${of.length?`<optgroup label="事業所・会社">${of.map(o=>op("o:"+o.name, o.name)).join("")}</optgroup>`:""}
-    ${op("free", offices.length?"一覧にない事業所・お店（名前を書く）":"事業所・会社（名前を書く）")}
-    ${hasKineya()?`<optgroup label="喜ね舎の出店日">${op("kineya","喜ね舎の会場で受け取る")}</optgroup>`:""}
-    ${(f.choices||[]).length?`<optgroup label="あけぼの園・しみずの杜・コスモスの職員の方（前払い）">${f.choices.map(c=>op("p:"+c, c)).join("")}</optgroup>`:""}`;
+// 入れた文字で始まる（2文字からは、途中に入っていても）事業所だけを候補に出す。一覧そのものは見せない
+function destCands(){
+  const q = nk(destQ).replace(/\s/g,""); if(!q) return [];
+  const a = offices.filter(o=>o.key.startsWith(q)), b = q.length>=2 ? offices.filter(o=>!o.key.startsWith(q) && o.key.includes(q)) : [];
+  return a.concat(b).slice(0,6);
+}
+function candsHtml(){
+  const c = destCands(), q = destQ.trim();
+  return (c.length ? `<div class="dchips" role="list" aria-label="候補">${c.map(o=>`<button type="button" data-office="${esc(o.name)}">${esc(o.name)}</button>`).join("")}</div>` : "")
+    + (q ? `<div style="margin-top:8px"><button type="button" class="btn" data-destfree="1" style="width:100%">${c.length?"候補にない新しいお取引先です（":"「"}${esc(q)}${c.length?"）":"」で決める"}</button>
+      <p class="note" style="margin:4px 0 0">${c.length?"候補にあるときは、上の名前を押してください。":"はじめてのお取引先は、名前を全部入れて押してください。お届け日は、こちらで確かめてご連絡します。"}</p></div>` : "");
 }
 function destBlock(){
   const f = fieldOf("dest"); if(!f) return "";
   const s = destSel();
   if(s && s.label && !destEdit) return `<div class="dest" style="margin-bottom:10px"><div><span class="note">お届け先</span><br><b>${esc(s.label)}</b></div><button type="button" data-destedit="1">変える</button></div>`;
-  return `<div style="margin-bottom:10px"><label class="q" for="dest-sel">お届け先<span class="req">必須</span></label>
-    <p class="note" style="margin:0 0 4px">はじめの1回だけ選んでください。次からは、このスマホが覚えています。</p>
-    ${offices.length>8?`<input type="text" id="dest-q" value="${esc(destQ)}" placeholder="名前の一部を入れると、しぼれます（例：コンピュータ）" aria-label="事業所を名前でさがす" style="margin-bottom:6px">`:""}
-    <select id="dest-sel" aria-label="お届け先">${destOptions()}</select>
-    ${s && s.kind==="free" || destFree ? `<input type="text" id="dest-free" value="${esc(vals[f.id+"_o"]||"")}" placeholder="事業所・お店の名前" aria-label="お届け先の名前" style="margin-top:6px">
-      <p class="note" style="margin:4px 0 0">一覧にない事業所は、お届け日をこちらで確かめます。</p>` : ""}</div>`;
+  return `<div style="margin-bottom:10px"><label class="q" for="dest-name">お届け先（事業所・会社の名前）<span class="req">必須</span></label>
+    <p class="note" style="margin:0 0 4px">最初の数文字を入れると、候補が出ます。はじめの1回だけで、次からはこのスマホが覚えています。</p>
+    <input type="text" id="dest-name" value="${esc(destQ)}" placeholder="例：福井コ" autocomplete="organization" aria-label="お届け先の名前">
+    <div id="dest-cands">${candsHtml()}</div>
+    <details style="margin-top:10px"${s && s.kind==="pre" ? " open" : ""}><summary class="note">あけぼの園・しみずの杜・コスモスの職員の方（前払い）</summary>
+      <div class="dchips">${(f.choices||[]).map(c=>`<button type="button" data-pre="${esc(c)}" aria-pressed="${!!(s && s.kind==="pre" && s.label===c)}">${esc(c)}</button>`).join("")}</div></details>
+    ${hasKineya()?`<div class="dchips" style="margin-top:8px"><button type="button" data-kineya="1">喜ね舎の会場で受け取る（出店日）</button></div>`:""}</div>`;
+}
+// 入れたままの名前を、お届け先に決める（一覧と同じ名前なら事業所）
+function commitDestName(){
+  const q = destQ.trim(); if(!q) return false;
+  const of = officeOf(q); setDest(of ? "office" : "free", of ? of.name : q); destEdit = false; destQ = ""; return true;
 }
 // 選んだ事業所の、これから先のいちばん近いお届け日（「12/10（木）」）
 function nextDay(s){
@@ -475,7 +482,13 @@ document.addEventListener("click", e=>{
     if(si && S.sum<S.q) sandPick.n[k]=(sandPick.n[k]||0)+1;
     if(sd && sandPick.n[k]>0) sandPick.n[k]--;
     render(); return; }
-  if(t.closest("[data-destedit]")){ destEdit = true; destQ = ""; render(); const s=$("dest-sel"); if(s) s.focus(); return; }
+  if(t.closest("[data-destedit]")){ destEdit = true; destQ = ""; render(); const s=$("dest-name"); if(s) s.focus(); return; }
+  const ob = t.closest("[data-office]"); if(ob){ setDest("office", ob.dataset.office); destEdit = false; destQ = ""; render(); return; }
+  const pb = t.closest("[data-pre]"); if(pb){ setDest("pre", pb.dataset.pre); destEdit = false; destQ = ""; render(); return; }
+  if(t.closest("[data-kineya]")){ setDest("kineya"); destEdit = false; destQ = ""; render(); return; }
+  if(t.closest("[data-destfree]")){ commitDestName(); render(); return; }
+  // 名前を入れたまま「次へ」を押したときも、その名前で決める
+  if(t.id==="b-next" && $("dest-name") && destQ.trim()) commitDestName();
   const dc = t.closest("[data-date]"); if(dc){ const df=fieldOf("date"); if(df){ vals[df.id]=dc.dataset.date; delete vals[df.id+"_o"]; } render(); return; }
   if(t.id==="b-next"){ if(step==="pick"){ step="info"; render(); window.scrollTo(0,0); } else send(); }
   if(t.id==="b-back"){ step="pick"; render(); window.scrollTo(0,0); }
@@ -483,25 +496,13 @@ document.addEventListener("click", e=>{
 });
 function onField(e){
   const id = e.target.id;
-  if(id==="dest-q"){
-    destQ = e.target.value; const s=$("dest-sel"); if(s) s.innerHTML = destOptions();
-    // しぼって1つになったら、その事業所に決める
-    const q = nk(destQ).replace(/\s/g,""), hit = q ? offices.filter(o=>o.key.includes(q)) : [];
-    if(hit.length===1){ setDest("office", hit[0].name); destEdit = false; destQ = ""; render(); }
+  if(id==="dest-name"){
+    destQ = e.target.value;
+    // 一覧と同じ名前を全部入れたときは、そのまま決める
+    // （「玉ノ江こども園」と「玉ノ江こども園（保護者・児童）」のように、ほかにも続きがある名前は決めない）
+    const of = officeOf(destQ); if(of && e.type==="input" && !offices.some(o=>o!==of && o.key.startsWith(of.key))){ setDest("office", of.name); destEdit = false; destQ = ""; render(); return; }
+    const c = $("dest-cands"); if(c) c.innerHTML = candsHtml();
     return; }
-  if(id==="dest-free"){
-    const f=fieldOf("dest"); if(f){ vals[f.id]="__other"; vals[f.id+"_o"]=e.target.value; destFree = true; }
-    if(e.type==="change"){ const of = officeOf(e.target.value); if(of) setDest("office", of.name); else setDest("free", e.target.value); destEdit = !e.target.value.trim(); render(); }
-    return; }
-  if(id==="dest-sel" && e.type==="change"){
-    const v = e.target.value;
-    if(v.startsWith("o:")){ setDest("office", v.slice(2)); destEdit = false; }
-    else if(v.startsWith("p:")){ setDest("pre", v.slice(2)); destEdit = false; }
-    else if(v==="kineya"){ setDest("kineya"); destEdit = false; }
-    else if(v==="free"){ setDest("free", ""); destEdit = true; }
-    else setDest("clear");
-    render(); if(v==="free"){ const x=$("dest-free"); if(x) x.focus(); } return;
-  }
   const k = e.target.dataset.f; if(!k) return;
   vals[k] = e.target.value;
   // 選び直したときは画面を描き直す（その他の欄・頼めるパン・メール/LINEの欄）
