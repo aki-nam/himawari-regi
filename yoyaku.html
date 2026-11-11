@@ -90,12 +90,24 @@ textarea{min-height:5.5em}
 .wkc .need.ng{color:var(--danger)}
 .qty button:disabled{opacity:.35;cursor:default}
 .wkc .o{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0}
-@media (prefers-reduced-motion: reduce){.item{transition:none}}
+.wait{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:color-mix(in srgb,var(--bg) 75%,transparent)}
+.wait[hidden]{display:none}
+.wait .in{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 20px;max-width:340px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.15)}
+.wait b{display:block;font-family:var(--f-display);font-size:1.15rem;margin:10px 0 4px}
+.spin{width:42px;height:42px;margin:0 auto;border-radius:50%;border:5px solid var(--line);border-top-color:var(--accent);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn.line{background:#06C755;color:#fff;border-color:#06C755}
+@media (prefers-reduced-motion: reduce){.item{transition:none}.spin{animation-duration:3s}}
 </style></head><body>
 <div class="wrap">
   <h1><span class="dot" aria-hidden="true"></span>手作りパン工房 ひまわり　ご予約</h1>
   <p class="note" id="lead">お届け日を選んで、パンを押してください（1回押すと1個）。<br>途中でやめるときは、そのまま画面を閉じてください（【予約する】を押すまで送られません）。</p>
   <div id="app"><div class="loading">メニューを読み込んでいます…<br><span class="note">はじめは10秒ほどかかることがあります。このままお待ちください。</span></div></div>
+</div>
+<div class="wait" id="wait" role="status" aria-live="polite" hidden>
+  <div class="in"><div class="spin" aria-hidden="true"></div>
+    <b>予約を送っています</b>
+    <p class="note" style="margin:0">数秒かかります。このままお待ちください。<br>画面を閉じたり、もどったりしないでください。</p></div>
 </div>
 <div class="bar" id="bar" hidden>
   <div class="in">
@@ -114,6 +126,8 @@ const FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSeJ2d926GBPr4JCRqLnx4
 const LINE_ADD = "https://lin.ee/o9oA0UH";
 // LINE の中（リッチメニューなど）で開いたときは、もう友だちなので友だち追加のボタンは出さない
 const IN_LINE = /\bLine\//i.test(navigator.userAgent);
+// 予約の内容を書いた状態で、LINE公式アカウントのトークを開く（お客さまが送ると、こちらから返信できるようになる）
+const LINE_MSG = "https://line.me/R/oaMessage/%40455zyiix/?";
 const KEY = "himawari-yoyaku-v1";   // このスマホに覚えること（お届け先・お名前など）
 const CATS = ["菓子パン","惣菜パン","サンド・パイ・他"];
 
@@ -364,6 +378,7 @@ function render(){
   $("b-back").hidden = step!=="info";
   $("b-next").textContent = step==="pick" ? "次へ（お名前など）" : (sending ? "送っています…" : "予約する");
   $("b-next").disabled = sending || (step==="pick" && !n);
+  $("wait").hidden = !sending;
 }
 function dateField(){
   const f = fieldOf("date"); if(!f) return "";
@@ -521,15 +536,23 @@ function renderDone(ans){
   const L = breads.filter(b=>cart[b.id]), name = fields.filter(f=>f.kind==="other" && /お名前/.test(f.title)).map(answerOf).join("");
   const df = fieldOf("date"), when = df ? answerOf(df) : "", w = todayWk(), S = sandState();
   const sub = b => b===S.b && S.o.length ? S.o.filter(k=>sandPick.n[k]).map(k=>k+" "+sandPick.n[k]+"個").join("・") : (b.wk ? wkText(b,w) : "");
+  // LINEに送る文（お客さまの送信で、こちらから返信できるようになる）
+  const ds = destSel(), lf = fieldOf("line"), lname = lf ? answerOf(lf) : "";
+  const lineText = ["らくらく予約で注文しました。",
+    name ? `お名前：${name}` : "", lname && lname!==name ? `LINEのお名前：${lname}` : "",
+    when ? `お届け日：${when}` : "", ds && ds.label ? `お届け先：${ds.label}` : "",
+    ...L.map(b=>`・${b.name}${sub(b)?`（${sub(b)}）`:""} ${cart[b.id]}個`),
+    `合計 ${yen(total())}（税込）`, "明細をお願いします。"].filter(Boolean).join("\n");
   $("app").innerHTML = `<div class="box done">
      <h2 style="margin-top:0">ご予約を受け付けました</h2>
      <p>${esc(when)}　${esc(name)} 様</p>
      <div class="lines">${L.map(b=>`<div class="line"><div>${esc(b.name)}${sub(b)?`<small>${esc(sub(b))}</small>`:""}</div><div>${cart[b.id]}個</div><div class="amt">${yen(b.price*cart[b.id])}</div></div>`).join("")}</div>
      <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div>
      <p class="note">この画面を残しておくときは、スクリーンショットを撮ってください。明細は、選んだ方法（メール／LINE）でお送りします。</p>
-     ${recvIs(/LINE/) && !IN_LINE?`<div style="margin-top:10px"><a class="btn primary" href="${LINE_ADD}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">LINEを開いて ひまわりを友だち追加</a>
-       <p class="note" style="margin:6px 0 0">明細をLINEで受け取るには、ひまわりのLINE公式アカウントの友だち登録と、最初のメッセージ（「○○です」など）が必要です。もう友だちの方は、そのままで大丈夫です。</p></div>`:""}
-     ${fields.lineNote && recvIs(/LINE/)?`<div class="err"><b>${esc(fields.lineNote.title)}</b><p class="note" style="margin:4px 0 0">${esc(fields.lineNote.help)}</p></div>`:""}
+     ${recvIs(/LINE/)?`<div class="err" style="margin-top:12px"><b>明細をLINEで受け取る方へ（あと1回押すだけ）</b>
+       <p class="note" style="margin:4px 0 8px">LINEのきまりで、お客さまから先にメッセージをいただかないと、こちらから明細を送れません。下のボタンを押すと、予約の内容が入った状態でLINEが開きます。そのまま<b style="display:inline">送信</b>を押してください。</p>
+       <a class="btn line" href="${LINE_MSG}${encodeURIComponent(lineText)}" style="display:block;text-align:center;text-decoration:none">LINEで予約内容を送る</a>
+       ${IN_LINE?"":`<p class="note" style="margin:8px 0 0">まだ友だちでない方は、先に <a href="${LINE_ADD}" target="_blank" rel="noopener">ひまわりを友だち追加</a> してから、上のボタンを押してください。</p>`}</div>`:""}
    </div>
    <div class="row" style="margin-top:12px"><button class="btn" type="button" id="b-again">ほかの日も予約する</button></div>`;
   step = "done"; sending = false; cart = {}; sandPick = {key:"", n:{}}; render();
