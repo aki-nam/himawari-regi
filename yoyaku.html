@@ -140,9 +140,13 @@ function remember(){ try{ localStorage.setItem(KEY, JSON.stringify(mem)); }catch
 /* ---------- フォームの質問を、パン（個数を選ぶ欄）とそのほかに分ける ---------- */
 function build(info){
   F = info; breads = []; fields = []; notices = []; weekly = null; kineya = {}; offices = []; holi = {};
+  let data = "";   // 事業所ごとのお届け日・お休み（お客さまには見えない、フォームの最後の隠しセクションに貼る）
   info.items.forEach(it=>{
+    const hdr = it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK";
+    if(hdr && /▽|◇\s*お休み/.test(it.help||"")) data += "\n" + it.help;
+    if(hdr && /らくらく予約用/.test(it.title)) return;
     // フォームの［週替わりメニュー（お届け日ごと）］（Excelのボタンで作った文を貼ったもの）
-    if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /週替わり/.test(it.title) && /[■▽]/.test(it.help||"")){ weekly = parseWeekly(it.help); kineya = parseKineya(it.help); offices = parseOffices(it.help); holi = parseHolidays(it.help); return; }
+    if(hdr && /週替わり/.test(it.title) && /■/.test(it.help||"")){ weekly = parseWeekly(it.help); kineya = parseKineya(it.help); return; }
     // フォームの「タイトルと説明」で、タイトルが「お知らせ」で始まるものを、画面のいちばん上に出す
     if((it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK") && /^[\s【\[「]*お知らせ/.test(it.title) && (it.help||"").trim()){
       notices.push({title:it.title.trim().replace(/^[【\[「]|[】\]」]$/g,""), help:it.help.trim()}); return; }
@@ -157,6 +161,7 @@ function build(info){
       fields.lineNote = it;   // LINEで受け取る人への大事な説明
     }
   });
+  offices = parseOffices(data); holi = parseHolidays(data);
   // 前に入れたものを入れておく
   fields.forEach(f=>{ if(f.kind!=="date" && f.kind!=="msg" && mem[f.title]!=null && vals[f.id]===undefined){ vals[f.id]=mem[f.title]; if(mem[f.title+"_o"]!=null) vals[f.id+"_o"]=mem[f.title+"_o"]; } });
 }
