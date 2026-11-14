@@ -159,7 +159,7 @@ function build(info){
   let data = "";   // 事業所ごとのお届け日・お休み（お客さまには見えない、フォームの最後の隠しセクションに貼る）
   info.items.forEach(it=>{
     const hdr = it.type==="SECTION_HEADER"||it.type==="PAGE_BREAK";
-    if(hdr && /▽|◇\s*お休み/.test(it.help||"")) data += "\n" + it.help;
+    if(hdr && /▽|◇\s*(お休み|別名)/.test(it.help||"")) data += "\n" + it.help;
     if(hdr && /らくらく予約用/.test(it.title)) return;
     // フォームの［週替わりメニュー（お届け日ごと）］（Excelのボタンで作った文を貼ったもの）
     if(hdr && /週替わり/.test(it.title) && /■/.test(it.help||"")){ weekly = parseWeekly(it.help); kineya = parseKineya(it.help); return; }
@@ -177,7 +177,7 @@ function build(info){
       fields.lineNote = it;   // LINEで受け取る人への大事な説明
     }
   });
-  offices = parseOffices(data); holi = parseHolidays(data);
+  offices = parseOffices(data); addAliases(data); holi = parseHolidays(data);
   // 前に入れたものを入れておく
   fields.forEach(f=>{ if(f.kind!=="date" && f.kind!=="msg" && mem[f.title]!=null && vals[f.id]===undefined){ vals[f.id]=mem[f.title]; if(mem[f.title+"_o"]!=null) vals[f.id+"_o"]=mem[f.title+"_o"]; } });
 }
@@ -240,7 +240,16 @@ function parseOffices(text){
   });
   return O;
 }
-const officeOf = name => { const k = nk(name).replace(/\s/g,""); return k ? offices.find(o=>o.key===k) : null; };
+// 「◇別名：福井市販売会＝福井市役所／市役所」→ ほかの書き方でも、その事業所を見つける（00_共通の表［得意先］の別名）
+// 別名の中に「/」が入ることがあるので、全角の「／」だけで区切る
+function addAliases(text){
+  String(text||"").split(/\n/).forEach(l=>{
+    const m = l.trim().match(/^◇\s*別名\s*[：:]\s*(.+?)\s*[＝=]\s*(.+)$/); if(!m) return;
+    const k = nk(m[1]).replace(/\s/g,""), o = offices.find(x=>x.key===k); if(!o) return;
+    m[2].split("／").map(s=>s.trim()).filter(Boolean).forEach(t=>{ (o.alts = o.alts||[]).push({t, k:nk(t).replace(/\s/g,"")}); });
+  });
+}
+const officeOf = name => { const k = nk(name).replace(/\s/g,""); return k ? (offices.find(o=>o.key===k) || offices.find(o=>(o.alts||[]).some(a=>a.k===k))) : null; };
 const hasKineya = () => Object.keys(kineya).length > 0;
 
 /* ---------- お届け先（事業所を選ぶ → その事業所のお届け日だけ出す） ---------- */
@@ -268,12 +277,19 @@ function setDest(kind, value){
 // 入れた文字で始まる（2文字からは、途中に入っていても）事業所だけを候補に出す。一覧そのものは見せない
 function destCands(){
   const q = nk(destQ).replace(/\s/g,""); if(!q) return [];
-  const a = offices.filter(o=>o.key.startsWith(q)), b = q.length>=2 ? offices.filter(o=>!o.key.startsWith(q) && o.key.includes(q)) : [];
+  // 事業所の名前か、その別名（ほかの書き方）が当たれば候補にする
+  const hit = (o, f) => f(o.key) || (o.alts||[]).some(a=>f(a.k));
+  const a = offices.filter(o=>hit(o, s=>s.startsWith(q))), b = q.length>=2 ? offices.filter(o=>!a.includes(o) && hit(o, s=>s.includes(q))) : [];
   return a.concat(b).slice(0,6);
+}
+// 名前ではなく別名で当たったときは、どの書き方で見つけたかを小さく添える
+function altHint(o){
+  const q = nk(destQ).replace(/\s/g,""); if(!q || o.key.includes(q)) return "";
+  const a = (o.alts||[]).find(x=>x.k.includes(q)); return a ? `<small style="opacity:.7">（${esc(a.t)}）</small>` : "";
 }
 function candsHtml(){
   const c = destCands(), q = destQ.trim();
-  return (c.length ? `<div class="dchips" role="list" aria-label="候補">${c.map(o=>`<button type="button" data-office="${esc(o.name)}">${esc(o.name)}</button>`).join("")}</div>` : "")
+  return (c.length ? `<div class="dchips" role="list" aria-label="候補">${c.map(o=>`<button type="button" data-office="${esc(o.name)}">${esc(o.name)}${altHint(o)}</button>`).join("")}</div>` : "")
     + (q ? `<div style="margin-top:8px"><button type="button" class="btn" data-destfree="1" style="width:100%">${c.length?"候補にない新しいお取引先です（":"「"}${esc(q)}${c.length?"）":"」で決める"}</button>
       <p class="note" style="margin:4px 0 0">${c.length?"候補にあるときは、上の名前を押してください。":"はじめてのお取引先は、名前を全部入れて押してください。お届け日は、こちらで確かめてご連絡します。"}</p></div>` : "");
 }
@@ -595,7 +611,9 @@ function onField(e){
     destQ = e.target.value;
     // 一覧と同じ名前を全部入れたときは、そのまま決める
     // （「玉ノ江こども園」と「玉ノ江こども園（保護者・児童）」のように、ほかにも続きがある名前は決めない）
-    const of = officeOf(destQ); if(of && e.type==="input" && !offices.some(o=>o!==of && o.key.startsWith(of.key))){ setDest("office", of.name); destEdit = false; destQ = ""; render(); return; }
+    // 別名で当たったときも同じ（「日本AMC」のあとに「永平寺工場」と続くかもしれないので、ほかの事業所の名前・別名の続きになっていれば決めない）
+    const q0 = nk(destQ).replace(/\s/g,""), more = o => o.key.startsWith(q0) && o.key!==q0 || (o.alts||[]).some(a=>a.k.startsWith(q0) && a.k!==q0);
+    const of = officeOf(destQ); if(of && e.type==="input" && !offices.some(o=>o!==of && (o.key.startsWith(of.key) || more(o)))){ setDest("office", of.name); destEdit = false; destQ = ""; render(); return; }
     const c = $("dest-cands"); if(c) c.innerHTML = candsHtml();
     return; }
   const k = e.target.dataset.f; if(!k) return;
