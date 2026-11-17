@@ -291,7 +291,9 @@ function menuFor(dateStr){
 }
 function workDate(){ return S.batch ? S.batch.date : today(); }
 const extraItem = x => ({no:x.no, name:x.name, price:Number(x.price), cat:"イベント", show:true, extra:true});
-function extras(){ return S.extra.filter(x=>x.on).map(extraItem); }
+// その日だけの品：足した日（出すにした日）だけレジに出る。「毎回出す」にした品は、出すのチェックがある間いつも出る
+const exShown = x => !!x.on && (!!x.keep || x.day===workDate());
+function extras(){ return S.extra.filter(exShown).map(extraItem); }
 // レジに並べるのは、その月のメニュー＋イベント用メニュー（販売残・Excelの並びは menuFor のまま）
 function curMenu(){ return menuFor(workDate()).concat(extras()); }
 function item(no){ no=Number(no);
@@ -938,9 +940,10 @@ function renderMenu(){
    <input id="p-list" type="text" inputmode="numeric" value="${esc(S.prices||"")}" placeholder="${esc(priceList().join("、"))}" style="font:inherit;width:100%;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)">
    <p class="note">パンの名前を探すひまが無いときは、上の【¥180】【¥200】…を押して値段だけで会計できます。どのパンか分からないので「残り」の数には入りません。<b>値段ボタンを使った日は、終わってから残ったパンを数えて「残り入力」に入れてください</b>（販売残はその数になります）。</p>
    <h2>イベント用メニュー（その日だけの品）</h2>
-   <p class="note">イベントで出す品を、ここで足せます。足した品は「イベント」の分類で、持参分（QR）と一緒にいつも並びます。売上とLINEの報告には入りますが、Excelの販売残には入りません。イベントが終わったら「出す」を外してください（また使うときはチェックを入れるだけ）。</p>
-   ${S.extra.length?`<div class="tblwrap"><table class="tbl medit"><thead><tr><th>出す</th><th>品名</th><th>よみ</th><th class="r">値段</th><th></th></tr></thead><tbody>
-   ${S.extra.map(x=>`<tr data-ex="${x.no}"><td><input type="checkbox" data-xf="on" ${x.on?"checked":""} aria-label="${esc(x.name)}を出す"></td>
+   <p class="note">イベントで出す品を、ここで足せます。足した品は「イベント」の分類で、<b>足した日だけ</b>レジに並びます（次の日には自動で出なくなります）。また使う日は「今日出す」にチェックを入れるだけです。何日も続けて出す品は「毎回出す」にチェックを入れてください。売上とLINEの報告には入りますが、Excelの販売残には入りません。</p>
+   ${S.extra.length?`<div class="tblwrap"><table class="tbl medit"><thead><tr><th>今日出す</th><th>毎回出す</th><th>品名</th><th>よみ</th><th class="r">値段</th><th></th></tr></thead><tbody>
+   ${S.extra.map(x=>`<tr data-ex="${x.no}"><td><input type="checkbox" data-xf="on" ${exShown(x)?"checked":""} aria-label="${esc(x.name)}を今日出す"></td>
+     <td><input type="checkbox" data-xf="keep" ${x.keep?"checked":""} aria-label="${esc(x.name)}を毎回出す"></td>
      <td><input type="text" data-xf="name" value="${esc(x.name)}" aria-label="品名"></td>
      <td><input type="text" data-xf="yomi" value="${esc(yomiOf(x.name))}" aria-label="よみ"></td>
      <td style="width:6.5em"><input type="number" data-xf="price" inputmode="numeric" value="${x.price}" aria-label="値段"></td>
@@ -1125,7 +1128,8 @@ $("v-menu").addEventListener("change",e=>{
   if(e.target.id==="p-list"){ S.prices=e.target.value.trim(); save(); renderMenu(); return; }
   const xr=e.target.closest("tr[data-ex]");
   if(xr){ const x=S.extra.find(x=>x.no===Number(xr.dataset.ex)), f=e.target.dataset.xf; if(!x) return;
-    if(f==="on") x.on=e.target.checked;
+    if(f==="on"){ x.on=e.target.checked; if(x.on) x.day=workDate(); }
+    if(f==="keep"){ x.keep=e.target.checked; if(x.keep){ x.on=true; x.day=workDate(); } save(); renderMenu(); return; }
     if(f==="price") x.price=Math.max(0,Number(e.target.value)||0);
     if(f==="yomi") setYomi(x.name, e.target.value);
     if(f==="name"){ const nn=e.target.value.trim(); if(nn){ moveYomi(x.name, nn); x.name=nn; } }
@@ -1143,7 +1147,7 @@ function addExtra(){
   const n=$("x-name").value.trim(), p=Number(String($("x-price").value).normalize("NFKC").replace(/[^\d]/g,"")), y=$("x-yomi").value.trim();
   if(!n || !(p>0)){ toast("品名と値段を入れてください"); return; }
   const no=Math.max(EXTRA_NO, ...S.extra.map(x=>x.no))+1;
-  S.extra.push({no, name:n, price:p, on:true}); if(y) setYomi(n, y); save(); renderMenu(); toast(n+"（"+yen(p)+"）を足しました。レジの「イベント」に出ます");
+  S.extra.push({no, name:n, price:p, on:true, day:workDate(), keep:false}); if(y) setYomi(n, y); save(); renderMenu(); toast(n+"（"+yen(p)+"）を足しました。今日だけレジの「イベント」に出ます");
 }
 $("v-menu").addEventListener("click",e=>{
   const t=e.target;
@@ -1151,7 +1155,7 @@ $("v-menu").addEventListener("click",e=>{
   if(so||sz||pbb){ if(so) S.sort=so.dataset.sort; if(sz) S.size=sz.dataset.size; if(pbb) S.priceBtns=pbb.dataset.pb==="on"; save(); renderMenu(); toast("変えました。レジの画面で確かめてください"); return; }
   if(t.id==="x-add"){ addExtra(); return; }
   const xd=t.closest("[data-xdel]"); if(xd){ const x=S.extra.find(x=>x.no===Number(xd.dataset.xdel));
-    if(x) askConfirm(`「${esc(x.name)}」を消しますか？（売上の記録は残ります。また使うなら「出す」を外すだけにしてください）`, ()=>{ S.extra=S.extra.filter(y=>y!==x); save(); renderMenu(); toast("消しました"); }); return; }
+    if(x) askConfirm(`「${esc(x.name)}」を消しますか？（売上の記録は残ります。また使うなら消さずに残しておけば、使う日に「今日出す」を入れるだけです）`, ()=>{ S.extra=S.extra.filter(y=>y!==x); save(); renderMenu(); toast("消しました"); }); return; }
   if(t.id==="m-import") importMenu();
   if(t.id==="m-reset") askConfirm("最初のメニューに戻しますか？（直した値段や名前も元に戻ります）", ()=>{ S.menu=DEFAULT_MENU.map(r=>r.slice()); S.cats={}; S.hidden={}; save(); renderMenu(); toast("最初のメニューに戻しました"); });
   if(t.id==="r-import") importRoster();
