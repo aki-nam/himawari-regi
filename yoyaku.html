@@ -37,6 +37,9 @@ textarea{min-height:5.5em}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0}
 .chips button{flex:none;font:inherit;font-size:.95rem;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
 .chips button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chips button.cmp{background:var(--sun);color:var(--sun-fg);border-color:var(--sun);font-weight:700}
+/* すっきり表示：パンを選ぶ画面で、タイトル・説明・お知らせ・週替わりの説明を隠して、パンのボタンを広く使う */
+body.compact h1,body.compact #lead,body.compact .notice,body.compact .wkbox,body.compact .pickh{display:none}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px}
 .item{position:relative;text-align:left;min-height:92px;padding:10px 10px 8px;border-radius:12px;border:1px solid var(--line);color:var(--fg);cursor:pointer;
   display:flex;flex-direction:column;justify-content:space-between;gap:4px;font:inherit;-webkit-tap-highlight-color:transparent;transition:transform .06s}
@@ -415,6 +418,8 @@ function render(){
   if(step==="pick") renderPick(); else if(step==="info") renderInfo();
   const n=count(); $("cnt").textContent=n+"個"; $("tot").textContent=yen(total());
   $("bar").hidden = step==="done"; $("lead").hidden = step==="done";
+  // すっきり表示（ボタンレジと同じ）：パンを選ぶ画面だけ。このスマホに覚える
+  document.body.classList.toggle("compact", step==="pick" && !!mem.__compact);
   $("b-back").hidden = step!=="info";
   $("b-next").textContent = step==="pick" ? "次へ（お名前など）" : (sending ? "送っています…" : "予約する");
   $("b-next").disabled = sending || (step==="pick" && !n);
@@ -456,17 +461,17 @@ function renderPick(){
   let list = breads.filter(b=>catFilter==="すべて"||b.cat===catFilter);
   const w = todayWk();
   $("app").innerHTML = `${notices.map(n=>`<div class="notice" role="note"><b>${esc(n.title)}</b>${esc(n.help)}</div>`).join("")}
-    <div class="box">${destBlock()}${dateField()}${weekly && dt ? (w ? `<div class="wk"><b>この日の週替わり</b><dl>
+    <div class="box">${destBlock()}${dateField()}${weekly && dt ? (w ? `<div class="wk wkbox"><b>この日の週替わり</b><dl>
         <dt>サンドイッチ</dt><dd>${esc(w.sand.join("／")||"なし")}${w.sand.length>1?`<span class="note">（どちらか1つ。次の画面で選びます）</span>`:""}</dd>
         <dt>ピザパン</dt><dd>${esc(w.pizza||"なし")}</dd><dt>調理パン</dt><dd>${esc(w.chori||"なし")}</dd></dl></div>`
-      : isKineya(dt) ? "" : `<div class="wk note">この日は、週替わりのパン（サンドイッチ・ピザパン・調理パン）はありません。</div>`) : ""}
+      : isKineya(dt) ? "" : `<div class="wk note wkbox">この日は、週替わりのパン（サンドイッチ・ピザパン・調理パン）はありません。</div>`) : ""}
       ${isKineya(dt) ? `<div class="wk"><b>この日は喜ね舎でのパン販売です</b><br>お受け取りは喜ね舎の会場で、午前中です。会場で受け取るときは、お届け先で「喜ね舎の会場で受け取る」を選んでください。食パン・ドーナツは、この日はご予約できません。</div>` : ""}</div>
-    <h2>パンを選ぶ</h2>
-    <div class="chips">${["すべて",...CATS].map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("")}</div>
+    <h2 class="pickh">パンを選ぶ</h2>
+    <div class="chips"><button type="button" class="cmp" data-compact="1" aria-pressed="${!!mem.__compact}">${mem.__compact?"▼ 上を出す":"▲ 上を隠す"}</button>${["すべて",...CATS].map(k=>`<button type="button" data-cat="${k}" aria-pressed="${k===catFilter}">${k}</button>`).join("")}</div>
     <div class="grid">${list.map(b=>{ const a=availability(b,dt), q=cart[b.id]||0, wt=b.wk&&a.ok?wkText(b,w):"";
       return `<button type="button" class="item${a.ok?"":" off"}" data-add="${b.id}" data-cat="${b.cat}" ${a.ok?"":`aria-disabled="true"`}>
         <span class="nm">${esc(b.name)}</span><span class="pr">${yen(b.price)}</span>
-        ${wt?`<span class="hp">${esc(wt)}</span>`:b.help && !/^5個以上/.test(b.help)?`<span class="hp">${esc(a.ok?b.help:a.why)}</span>`:(a.ok?"":`<span class="hp">${esc(a.why)}</span>`)}
+        ${wt?`<span class="hp">${esc(wt)}</span>`:b.help && !/^5個以上/.test(b.help)?`<span class="hp">${esc(a.ok?(isShoku(b)?"6枚切り以外は、次の画面で切り方を選べます（8枚まで）":b.help):a.why)}</span>`:(a.ok?"":`<span class="hp">${esc(a.why)}</span>`)}
         ${q?`<span class="badge">${q}</span>`:""}</button>`; }).join("")}</div>
     <p class="note">数をへらすときは「次へ」の画面で − を押します。5個以上もそのまま押せます（連絡欄に自動で書きます）。</p>`;
 }
@@ -605,6 +610,7 @@ function renderDone(ans){
 /* ---------- 操作 ---------- */
 document.addEventListener("click", e=>{
   const t = e.target;
+  if(t.closest("[data-compact]")){ mem.__compact = !mem.__compact; remember(); render(); return; }
   const c = t.closest("[data-cat]"); if(c && c.tagName==="BUTTON" && !c.classList.contains("item")){ catFilter=c.dataset.cat; render(); return; }
   const a = t.closest("[data-add]"); if(a){ if(a.classList.contains("off")) return; cart[a.dataset.add]=(cart[a.dataset.add]||0)+1; render(); return; }
   const inc = t.closest("[data-inc]"), dec = t.closest("[data-dec]");
