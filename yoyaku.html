@@ -147,6 +147,9 @@ function catOf(n){
 let F = null;          // フォームの中身
 let breads = [], fields = [], notices = [], cart = {}, vals = {}, step = "pick", catFilter = "すべて", sending = false;
 let weekly = null, kineya = {}, sandPick = {key:"", n:{}};   // 週替わりの中身（お届け日ごと）と、選んだサンドイッチの中身
+// 食パンの切り方：ふつうは6枚切り。ちがう切り方の斤だけ数える（パンのid → {枚数: 斤}）
+const SLICE_STD = 6, SLICES = [4, 5, 8];
+let slicePick = {};
 let offices = [], destEdit = false, destFree = false, destQ = "", dateMode = "", dateReason = "";  // dateMode: late=締め切り後の取り置き / other=決まった日以外  // 事業所ごとのお届け日・お届け先を選び直し中か
 const KINEYA_DEST = "喜ね舎で受け取り";
 let holi = {};   // お休みの日（"11-23": true）
@@ -366,6 +369,25 @@ function sandState(){
   for(let i=o.length-1; sum>q && i>=0; i--){ while(sum>q && sandPick.n[o[i]]>0){ sandPick.n[o[i]]--; sum--; } }
   return {o, b, q, sum};
 }
+function isShoku(b){ return /食パン/.test(b.name); }
+// 事務所の Excel が読む名前（「玄米食パン6枚切り」「食パン【6枚切り】」→「玄米食パン」「食パン」）
+function shokuKey(b){ return b.name.split(/[（(【0-9０-９]/)[0].trim(); }
+function sliceState(b){
+  const q = cart[b.id]||0, p = slicePick[b.id] || (slicePick[b.id] = {});
+  let sum = SLICES.reduce((s,k)=>s+(p[k]||0),0);
+  for(let i=SLICES.length-1; sum>q && i>=0; i--){ while(sum>q && p[SLICES[i]]>0){ p[SLICES[i]]--; sum--; } }
+  return {p, q, sum, std:q-sum};
+}
+// 「6枚切り1・8枚切り1」（ふつうの切り方だけなら ""）
+function sliceText(b){ const S = sliceState(b); if(!S.sum) return "";
+  return [[SLICE_STD, S.std], ...SLICES.map(k=>[k, S.p[k]||0])].filter(a=>a[1]>0).sort((a,b)=>a[0]-b[0]).map(a=>a[0]+"枚切り"+a[1]).join("・"); }
+function sliceBlock(b){
+  const S = sliceState(b);
+  return `<div class="wkc" role="group" aria-label="食パンの切り方">
+    <div class="need">切り方（ふつうは${SLICE_STD}枚切り。ちがう切り方にしたい斤だけ ＋ を押してください）</div>
+    <div class="o"><span>${SLICE_STD}枚切り</span><div class="qty"><span>${S.std}</span></div></div>
+    ${SLICES.map(k=>`<div class="o"><span>${k}枚切り</span><div class="qty"><button type="button" data-sldec="${b.id}:${k}" aria-label="${k}枚切りを1つへらす">−</button><span>${S.p[k]||0}</span><button type="button" data-slinc="${b.id}:${k}" aria-label="${k}枚切りを1つふやす" ${S.std<=0?"disabled":""}>＋</button></div></div>`).join("")}</div>`;
+}
 
 /* ---------- お届け日と、その日に頼めるパン ---------- */
 function dateOf(s){
@@ -490,7 +512,8 @@ function renderInfo(){
        <div class="amt">${yen(b.price*cart[b.id])}</div>
        ${b===S.b && S.o.length ? `<div class="wkc" role="group" aria-label="サンドイッチの中身">
          <div class="need${S.sum<S.q?" ng":""}">${S.sum<S.q ? `中身を選んでください（あと${S.q-S.sum}個）` : "中身を選びました"}</div>
-         ${S.o.map((k,i)=>`<div class="o"><span>${esc(k)}</span><div class="qty"><button type="button" data-sdec="${i}" aria-label="${esc(k)}を1つへらす">−</button><span>${sandPick.n[k]||0}</span><button type="button" data-sinc="${i}" aria-label="${esc(k)}を1つふやす" ${S.sum>=S.q?"disabled":""}>＋</button></div></div>`).join("")}</div>` : ""}</div>`).join("")}</div>
+         ${S.o.map((k,i)=>`<div class="o"><span>${esc(k)}</span><div class="qty"><button type="button" data-sdec="${i}" aria-label="${esc(k)}を1つへらす">−</button><span>${sandPick.n[k]||0}</span><button type="button" data-sinc="${i}" aria-label="${esc(k)}を1つふやす" ${S.sum>=S.q?"disabled":""}>＋</button></div></div>`).join("")}</div>` : ""}
+       ${isShoku(b) ? sliceBlock(b) : ""}</div>`).join("")}</div>
      <div class="total"><span>合計（税込）</span><span class="v">${yen(total())}</span></div></div>
     <h2>お届け先・お名前</h2>
     <div class="box fields"><div>${destBlock()}</div>${dateField()}${shown.map(optField).join("")}
@@ -515,6 +538,9 @@ function collect(){
     if(S.sum<S.q) miss.push(`手作りサンドイッチの中身（${S.o.join("／")}）を、あと${S.q-S.sum}個選んでください`);
     else sand = "【サンドイッチ】" + S.o.filter(k=>sandPick.n[k]).map(k=>k+sandPick.n[k]).join("・");
   }
+  // 食パンの切り方（6枚切り以外があるときだけ）。例：【食パンの切り方】食パン：6枚切り1・8枚切り1／玄米食パン：4枚切り1
+  const sl = breads.filter(b=>cart[b.id] && isShoku(b) && sliceText(b)).map(b=>shokuKey(b)+"："+sliceText(b));
+  if(sl.length) sand = (sand ? sand+"\n" : "") + "【食パンの切り方】" + sl.join("／");
   fields.forEach(f=>{
     const hidden = (f.kind==="mail" && !recvIs(/メール/)) || (f.kind==="line" && !recvIs(/LINE/));
     let v = hidden ? "" : answerOf(f);
@@ -553,7 +579,7 @@ async function send(){
 function renderDone(ans){
   const L = breads.filter(b=>cart[b.id]), name = fields.filter(f=>f.kind==="other" && /お名前/.test(f.title)).map(answerOf).join("");
   const df = fieldOf("date"), when = df ? answerOf(df) : "", w = todayWk(), S = sandState();
-  const sub = b => b===S.b && S.o.length ? S.o.filter(k=>sandPick.n[k]).map(k=>k+" "+sandPick.n[k]+"個").join("・") : (b.wk ? wkText(b,w) : "");
+  const sub = b => b===S.b && S.o.length ? S.o.filter(k=>sandPick.n[k]).map(k=>k+" "+sandPick.n[k]+"個").join("・") : isShoku(b) && sliceText(b) ? sliceText(b).replace(/切り(\d+)/g,"切り $1斤") : (b.wk ? wkText(b,w) : "");
   // LINEに送る文（お客さまの送信で、こちらから返信できるようになる）
   const ds = destSel(), lf = fieldOf("line"), lname = lf ? answerOf(lf) : "";
   const lineText = ["らくらく予約で注文しました。",
@@ -573,7 +599,7 @@ function renderDone(ans){
        ${IN_LINE?"":`<p class="note" style="margin:8px 0 0">まだ友だちでない方は、先に <a href="${LINE_ADD}" target="_blank" rel="noopener">ひまわりを友だち追加</a> してから、上のボタンを押してください。</p>`}</div>`:""}
    </div>
    <div class="row" style="margin-top:12px"><button class="btn" type="button" id="b-again">ほかの日も予約する</button></div>`;
-  step = "done"; sending = false; cart = {}; sandPick = {key:"", n:{}}; render();
+  step = "done"; sending = false; cart = {}; sandPick = {key:"", n:{}}; slicePick = {}; render();
 }
 
 /* ---------- 操作 ---------- */
@@ -588,6 +614,12 @@ document.addEventListener("click", e=>{
   if(si||sd){ const S=sandState(), k=S.o[Number((si||sd).dataset[si?"sinc":"sdec"])]; if(k==null) return;
     if(si && S.sum<S.q) sandPick.n[k]=(sandPick.n[k]||0)+1;
     if(sd && sandPick.n[k]>0) sandPick.n[k]--;
+    render(); return; }
+  const li = t.closest("[data-slinc]"), ld = t.closest("[data-sldec]");
+  if(li||ld){ const [id, k] = (li||ld).dataset[li?"slinc":"sldec"].split(":"), b = breads.find(x=>String(x.id)===id); if(!b) return;
+    const S = sliceState(b);
+    if(li && S.std>0) S.p[k] = (S.p[k]||0)+1;
+    if(ld && S.p[k]>0) S.p[k]--;
     render(); return; }
   if(t.closest("[data-destedit]")){ destEdit = true; destQ = ""; render(); const s=$("dest-name"); if(s) s.focus(); return; }
   const ob = t.closest("[data-office]"); if(ob){ setDest("office", ob.dataset.office); destEdit = false; destQ = ""; render(); return; }
