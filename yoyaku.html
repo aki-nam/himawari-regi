@@ -337,8 +337,13 @@ const dText = d => (d.getMonth()+1)+"月"+d.getDate()+"日";
 function valOfDay(d){ const f = fieldOf("date"); return ((f&&f.choices)||[]).find(c=>{ const x = dateOf(c); return x && keyOf(x)===keyOf(d); }) || dText(d); }
 const sameDay = (a, b) => { const x = dateOf(a), y = b instanceof Date ? b : dateOf(b); return !!(x && y && keyOf(x)===keyOf(y)); };
 function nextDay(){ return ""; }
+// お取り置きをしない事業所（名前は書かず、名前から作った番号で見分ける）
+const NO_KEEP = [3368792515];
+const nameNo = n => { let h = 5381; for(const c of String(n).replace(/[ 　]/g,"")) h = (h*33 + c.codePointAt(0)) >>> 0; return h; };
+function noKeep(s){ return !!(s && s.kind==="office" && NO_KEEP.includes(nameNo(s.office.name))); }
 // 締め切りを過ぎたけれど、まだ来ていない、その事業所の日（明日から。取り置きのご依頼に使う）
 function lateDays(s){
+  if(noKeep(s)) return [];
   const on = s.kind==="office" ? s.office.days : kineya, now = today0();
   return Object.keys(on).map(dayOfKey).filter(dt=>dt > now && !canOrder(dt)).sort((a,b)=>a-b);
 }
@@ -491,7 +496,7 @@ function optField(f){
   }
   const v = vals[f.id]||"";
   // 連絡欄：サンドイッチの中身は前の画面で選び、5個以上の数は自動で書くので、その2つはこの画面では見せない（フォームの文はそのまま）
-  const title = esc((f.kind==="msg" ? f.title.replace(/サンドイッチの選択名[・、]?/g,"").replace(/個数が[5５]個以上の場合の数量記入[・、]?/g,"") : f.title).trim()), req = f.required?`<span class="req">必須</span>`:"";
+  const title = esc((f.kind==="msg" ? f.title.replace(/サンドイッチの選択名[・、]?/g,"").replace(/個数が[5５]個以上の場合の数量記入[・、]?/g,"").replace(noKeep(destSel()) ? /、取り置き希望(?=（)|取り置き希望の方は記入・/g : /$^/g, "") : f.title).trim()), req = f.required?`<span class="req">必須</span>`:"";
   if(f.type==="MULTIPLE_CHOICE") return `<div><span class="q" style="font-weight:700">${title}${req}</span>
       ${f.help?`<p class="note" style="margin:2px 0 6px">${esc(f.help)}</p>`:""}
       <div class="opt" role="radiogroup" aria-label="${title}">${(f.choices||[]).map(c=>`<label><input type="radio" name="r-${f.id}" data-f="${f.id}" value="${esc(c)}" ${c===v?"checked":""}><span>${esc(c)}</span></label>`).join("")}
